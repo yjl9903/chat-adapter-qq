@@ -59,10 +59,13 @@ export function toThreadId(raw: QQRawMessage): QQThreadId {
 
 /** 将 QQ 原始作者信息映射为 Chat SDK Author。 */
 export function toAuthor(raw: QQRawMessage, isMe: boolean): Author {
+  const userId = String(raw.user_id);
+  const userName = raw.sender.card || raw.sender.nickname || String(raw.user_id);
+
   return {
-    userId: String(raw.user_id),
-    userName: String(raw.user_id),
-    fullName: raw.sender.card || raw.sender.nickname || String(raw.user_id),
+    userId,
+    userName,
+    fullName: userName,
     isBot: isMe,
     isMe
   };

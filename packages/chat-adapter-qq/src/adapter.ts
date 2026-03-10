@@ -123,6 +123,13 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     this.userName = login.nickname;
   }
 
+  /**
+   * 获取已初始化的 NapCat 客户端，否则抛出配置错误。
+   */
+  public getClient() {
+    return this.requireClient();
+  }
+
   /** QQ 适配器为 WS-only 模式，HTTP webhook 入口固定返回 501。 */
   public async handleWebhook(_request: Request, _options?: WebhookOptions): Promise<Response> {
     return new Response('QQ adapter uses NapCat WebSocket ingress only.', {
