@@ -14,7 +14,7 @@ import {
   Message
 } from 'chat';
 import { ValidationError } from '@chat-adapter/shared';
-import { NCWebsocket, Structs, type SendMessageSegment } from 'node-napcat-ts';
+import { type SendMessageSegment, NCWebsocket, Structs } from 'node-napcat-ts';
 
 import type {
   QQAdapterConfig,
@@ -25,16 +25,8 @@ import type {
   QQThreadId
 } from './types.js';
 
-import { QQFormatConverter } from './format-converter.js';
-import {
-  extractText,
-  isMention,
-  isSelfMessage,
-  toAttachments,
-  toAuthor,
-  toNumberId,
-  toThreadId
-} from './utils.js';
+import { QQFormatConverter, extractText, toAttachments } from './format-converter.js';
+import { isMention, isSelfMessage, toAuthor, toNumberId, toThreadId } from './utils.js';
 
 /**
  * Chat SDK QQ 平台适配器（基于 NapCat WebSocket）。
@@ -59,11 +51,11 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
   private readonly config: QQAdapterConfig;
 
-  private readonly converter = new QQFormatConverter();
-
   private chat: ChatInstance | null = null;
 
   private client?: QQNapcatClient;
+
+  private converter!: QQFormatConverter;
 
   private selfId?: string;
 
@@ -109,6 +101,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
     if (!this.client) {
       this.client = new NCWebsocket(this.config.napcat, this.config.debug ?? false);
+      this.converter = new QQFormatConverter(this.client);
     }
 
     this.bindListeners();
@@ -192,6 +185,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     const client = this.requireClient();
     const parsed = this.decodeThreadId(threadId);
     const peerId = toNumberId(parsed.peerId, 'peerId');
+
     const text = this.converter.renderPostable(message);
     const outgoingText = text.length > 0 ? text : ' ';
     const segments: SendMessageSegment[] = [Structs.text(outgoingText)];

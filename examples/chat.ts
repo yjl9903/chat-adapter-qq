@@ -1,6 +1,7 @@
 import 'dotenv/config';
+import fs from 'node:fs';
 
-import { Chat } from 'chat';
+import { type Message, Chat } from 'chat';
 import { createMemoryState } from '@chat-adapter/state-memory';
 
 import { createQQAdapter } from '../packages/chat-adapter-qq/src/index.js';
@@ -33,9 +34,19 @@ bot.onNewMention(async (thread, message) => {
   bot.getLogger(thread.adapter.name).info('onNewMention', message);
   await thread.subscribe();
   await thread.post(`订阅频道: ${message.text}`);
+  await writeMessage(message);
 });
 
 bot.onSubscribedMessage(async (thread, message) => {
   bot.getLogger(thread.adapter.name).info('onSubscribedMessage', message);
   await thread.post(`收到消息: ${message.text}`);
+  await writeMessage(message);
 });
+
+async function writeMessage(message: Message<unknown>) {
+  await fs.promises.writeFile(
+    `.profile/${message.id}.json`,
+    JSON.stringify(message.raw, null, 2),
+    'utf-8'
+  );
+}
