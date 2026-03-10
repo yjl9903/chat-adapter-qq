@@ -47,7 +47,7 @@
     "node-napcat-ts": "^0.4.21"
   },
   "devDependencies": {
-    "@chat-adapter/state-memory": "^4.18.0",
+    "@chat-adapter/state-memory": "^4.19.0",
     "chat": "^4.18.0"
   },
   "peerDependencies": {
