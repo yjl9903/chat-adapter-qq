@@ -3,18 +3,58 @@ import {
   createQQAdapter,
   type QQNapcatClient,
   type QQGroupMessage,
-  type QQPrivateMessage
+  type QQPrivateMessage,
+  type QQRawMessage
 } from '../src/index.js';
+
+type HistoryParams = {
+  message_seq?: number;
+  count?: number;
+  reverseOrder?: boolean;
+};
 
 export class MockNapcatClient {
   connectCalls = 0;
   deletedMessages: number[] = [];
   sentGroupMessages: Array<{ group_id: number; message: SendMessageSegment[] }> = [];
   sentPrivateMessages: Array<{ user_id: number; message: SendMessageSegment[] }> = [];
+  emojiLikeCalls: Array<{ message_id: number; emoji_id: string; set?: boolean }> = [];
+  groupHistoryCalls: Array<{ group_id: number; message_seq?: number; count?: number }> = [];
+  friendHistoryCalls: Array<{ user_id: number; message_seq?: number; count?: number }> = [];
+  inputStatusCalls: Array<{ user_id: string; event_type: number }> = [];
+  getMsgCalls: number[] = [];
+  getGroupInfoCalls: number[] = [];
+  getStrangerInfoCalls: number[] = [];
 
   private nextMessageId = 1000;
   private readonly groupHandlers: Array<(event: QQGroupMessage) => void> = [];
   private readonly privateHandlers: Array<(event: QQPrivateMessage) => void> = [];
+  private readonly groupHistory = new Map<number, QQRawMessage[]>();
+  private readonly friendHistory = new Map<number, QQRawMessage[]>();
+  private readonly messagesById = new Map<number, QQRawMessage>();
+  private readonly groupInfoById = new Map<
+    number,
+    {
+      group_all_shut: number;
+      group_remark: string;
+      group_id: number;
+      group_name: string;
+      member_count: number;
+      max_member_count: number;
+    }
+  >();
+  private readonly strangerInfoById = new Map<
+    number,
+    {
+      user_id: number;
+      nickname: string;
+      nick: string;
+      remark: string;
+      sex: 'male' | 'female' | 'unknown';
+      qid: string;
+      qqLevel: number;
+    }
+  >();
 
   async connect(): Promise<void> {
     this.connectCalls += 1;
@@ -69,6 +109,177 @@ export class MockNapcatClient {
     this.deletedMessages.push(params.message_id);
     return null;
   }
+
+  async set_msg_emoji_like(params: {
+    message_id: number;
+    emoji_id: string;
+    set?: boolean;
+  }): Promise<{ result: 0; errMsg: string }> {
+    this.emojiLikeCalls.push(params);
+    return {
+      result: 0,
+      errMsg: ''
+    };
+  }
+
+  async get_group_msg_history(params: {
+    group_id: number;
+    message_seq?: number;
+    count?: number;
+    reverseOrder?: boolean;
+  }): Promise<{ messages: QQRawMessage[] }> {
+    this.groupHistoryCalls.push({
+      group_id: params.group_id,
+      message_seq: params.message_seq,
+      count: params.count
+    });
+    const source = this.groupHistory.get(params.group_id) ?? [];
+    return {
+      messages: this.paginateHistory(source, params)
+    };
+  }
+
+  async get_friend_msg_history(params: {
+    user_id: number;
+    message_seq?: number;
+    count?: number;
+    reverseOrder?: boolean;
+  }): Promise<{ messages: QQRawMessage[] }> {
+    this.friendHistoryCalls.push({
+      user_id: params.user_id,
+      message_seq: params.message_seq,
+      count: params.count
+    });
+    const source = this.friendHistory.get(params.user_id) ?? [];
+    return {
+      messages: this.paginateHistory(source, params)
+    };
+  }
+
+  async get_msg(params: { message_id: number }): Promise<QQRawMessage> {
+    this.getMsgCalls.push(params.message_id);
+    const found = this.messagesById.get(params.message_id);
+    if (!found) {
+      throw new Error(`Message not found: ${params.message_id}`);
+    }
+    return found;
+  }
+
+  async get_group_info(params: { group_id: number }): Promise<{
+    group_all_shut: number;
+    group_remark: string;
+    group_id: number;
+    group_name: string;
+    member_count: number;
+    max_member_count: number;
+  }> {
+    this.getGroupInfoCalls.push(params.group_id);
+    return (
+      this.groupInfoById.get(params.group_id) ?? {
+        group_all_shut: 0,
+        group_remark: '',
+        group_id: params.group_id,
+        group_name: `group-${params.group_id}`,
+        member_count: 0,
+        max_member_count: 0
+      }
+    );
+  }
+
+  async get_stranger_info(params: { user_id: number }): Promise<{
+    user_id: number;
+    nickname: string;
+    nick: string;
+    remark: string;
+    sex: 'male' | 'female' | 'unknown';
+    qid: string;
+    qqLevel: number;
+  }> {
+    this.getStrangerInfoCalls.push(params.user_id);
+    return (
+      this.strangerInfoById.get(params.user_id) ?? {
+        user_id: params.user_id,
+        nickname: `user-${params.user_id}`,
+        nick: `user-${params.user_id}`,
+        remark: '',
+        sex: 'unknown',
+        qid: '',
+        qqLevel: 0
+      }
+    );
+  }
+
+  async set_input_status(params: {
+    user_id: string;
+    event_type: number;
+  }): Promise<{ result: 0; errMsg: string }> {
+    this.inputStatusCalls.push(params);
+    return {
+      result: 0,
+      errMsg: ''
+    };
+  }
+
+  setGroupHistory(groupId: number, messages: QQRawMessage[]): void {
+    this.groupHistory.set(groupId, messages);
+    for (const message of messages) {
+      this.messagesById.set(message.message_id, message);
+    }
+  }
+
+  setFriendHistory(userId: number, messages: QQRawMessage[]): void {
+    this.friendHistory.set(userId, messages);
+    for (const message of messages) {
+      this.messagesById.set(message.message_id, message);
+    }
+  }
+
+  setMessage(message: QQRawMessage): void {
+    this.messagesById.set(message.message_id, message);
+  }
+
+  setGroupInfo(
+    groupId: number,
+    info: {
+      group_all_shut: number;
+      group_remark: string;
+      group_id: number;
+      group_name: string;
+      member_count: number;
+      max_member_count: number;
+    }
+  ): void {
+    this.groupInfoById.set(groupId, info);
+  }
+
+  setStrangerInfo(
+    userId: number,
+    info: {
+      user_id: number;
+      nickname: string;
+      nick: string;
+      remark: string;
+      sex: 'male' | 'female' | 'unknown';
+      qid: string;
+      qqLevel: number;
+    }
+  ): void {
+    this.strangerInfoById.set(userId, info);
+  }
+
+  private paginateHistory(messages: QQRawMessage[], params: HistoryParams): QQRawMessage[] {
+    const sorted = [...messages].sort((a, b) => a.message_seq - b.message_seq);
+    const count = params.count ?? 50;
+    const cursor = params.message_seq;
+
+    if (params.reverseOrder) {
+      const candidates = cursor ? sorted.filter((item) => item.message_seq <= cursor) : sorted;
+      return candidates.slice(-count);
+    }
+
+    const candidates = cursor ? sorted.filter((item) => item.message_seq >= cursor) : sorted;
+    return candidates.slice(0, count);
+  }
 }
 
 export function attachMockClient(
@@ -84,16 +295,19 @@ export function createGroupMessage(
     userId?: number;
     groupId?: number;
     messageId?: number;
+    messageSeq?: number;
+    time?: number;
     rawMessage?: string;
   }
 ): QQGroupMessage {
+  const messageId = options?.messageId ?? 123;
   return {
     self_id: 10001,
     user_id: options?.userId ?? 20002,
-    time: 1710000000,
-    message_id: options?.messageId ?? 123,
-    message_seq: 123,
-    real_id: 123,
+    time: options?.time ?? 1710000000,
+    message_id: messageId,
+    message_seq: options?.messageSeq ?? messageId,
+    real_id: messageId,
     message_type: 'group',
     sender: {
       user_id: options?.userId ?? 20002,
@@ -116,16 +330,19 @@ export function createPrivateMessage(
   options?: {
     userId?: number;
     messageId?: number;
+    messageSeq?: number;
+    time?: number;
     rawMessage?: string;
   }
 ): QQPrivateMessage {
+  const messageId = options?.messageId ?? 321;
   return {
     self_id: 10001,
     user_id: options?.userId ?? 20002,
-    time: 1710000000,
-    message_id: options?.messageId ?? 321,
-    message_seq: 321,
-    real_id: 321,
+    time: options?.time ?? 1710000000,
+    message_id: messageId,
+    message_seq: options?.messageSeq ?? messageId,
+    real_id: messageId,
     message_type: 'private',
     sender: {
       user_id: options?.userId ?? 20002,

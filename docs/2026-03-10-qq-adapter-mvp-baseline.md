@@ -1,4 +1,8 @@
-# chat-adapter-qq - 2026-03-10
+# qq adapter mvp baseline - 2026-03-10
+
+> Historical baseline document.
+> Current implementation details and post-MVP behavior are tracked in:
+> `docs/2026-03-11-qq-adapter-interface-completion.md`.
 
 ## Reference Docs
 
@@ -9,7 +13,7 @@
 
 This package is a Chat SDK community adapter for QQ, implemented on top of `node-napcat-ts`.
 
-The current package code is still in bootstrap state. This document captures the agreed MVP direction and serves as the implementation baseline for the next commits.
+This document captures the original MVP direction and baseline assumptions used during initial implementation.
 
 ## MVP Goals
 
@@ -73,6 +77,6 @@ The current package code is still in bootstrap state. This document captures the
 5. Post routing to group/private send APIs.
 6. Self-message loop prevention.
 
-## Next Step
+## Follow-up
 
-Implement adapter files and tests based on this baseline, then update `README.md` to match actual exported API and setup steps.
+See `docs/2026-03-11-qq-adapter-interface-completion.md` for implemented interface coverage, pagination details, and verification results.

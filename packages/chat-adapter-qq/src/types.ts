@@ -1,8 +1,10 @@
 import type { Logger } from 'chat';
 import type {
   MessageHandler as NapcatMessageHandler,
+  GroupMsgEmojiLike,
   NCWebsocket,
-  NCWebsocketOptions
+  NCWebsocketOptions,
+  WSSendReturn
 } from 'node-napcat-ts';
 
 /**
@@ -27,14 +29,20 @@ export interface QQThreadId {
 /** NapCat WebSocket 客户端类型别名。 */
 export type QQNapcatClient = NCWebsocket;
 
-/** QQ 适配器统一使用的原始消息类型（message union）。 */
-export type QQRawMessage = NapcatMessageHandler['message'];
+/** NapCat API 查询返回的消息类型。 */
+export type QQApiMessage = WSSendReturn['get_msg'];
+
+/** QQ 适配器统一使用的原始消息类型（WS 推送 + API 查询）。 */
+export type QQRawMessage = NapcatMessageHandler['message'] | QQApiMessage;
 
 /** QQ 群消息原始类型。 */
 export type QQGroupMessage = NapcatMessageHandler['message.group'];
 
 /** QQ 私聊消息原始类型。 */
 export type QQPrivateMessage = NapcatMessageHandler['message.private'];
+
+/** QQ 贴表情 */
+export type QQEmojiLikeMessage = GroupMsgEmojiLike;
 
 /** QQ 适配器配置。 */
 export interface QQAdapterConfig {

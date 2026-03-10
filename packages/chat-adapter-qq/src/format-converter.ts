@@ -17,11 +17,8 @@ export type QQMessageSegment = Receive[keyof Receive];
  * @todo
  */
 export class QQFormatConverter extends BaseFormatConverter {
-  private readonly client: QQNapcatClient;
-
-  public constructor(client: QQNapcatClient) {
+  public constructor(_client?: QQNapcatClient) {
     super();
-    this.client = client;
   }
 
   public toAst(platformText: string): Root {

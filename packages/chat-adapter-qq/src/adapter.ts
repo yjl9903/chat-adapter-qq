@@ -1,6 +1,7 @@
 import {
   type Adapter,
   type AdapterPostableMessage,
+  type ChannelInfo,
   type ChatInstance,
   type EmojiValue,
   type FetchOptions,
@@ -11,13 +12,15 @@ import {
   type ThreadInfo,
   type WebhookOptions,
   NotImplementedError,
-  Message
+  Message,
+  emoji
 } from 'chat';
 import { ValidationError } from '@chat-adapter/shared';
 import { type SendMessageSegment, NCWebsocket, Structs } from 'node-napcat-ts';
 
 import type {
   QQAdapterConfig,
+  QQEmojiLikeMessage,
   QQGroupMessage,
   QQNapcatClient,
   QQPrivateMessage,
@@ -26,6 +29,7 @@ import type {
 } from './types.js';
 
 import { QQFormatConverter, extractText, toAttachments } from './format-converter.js';
+import { normalizeQQEmojiId } from './emoji.js';
 import { isMention, isSelfMessage, toAuthor, toNumberId, toThreadId } from './utils.js';
 
 /**
@@ -69,6 +73,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
   public constructor(config: QQAdapterConfig) {
     this.config = config;
     this.userName = '';
+    this.converter = new QQFormatConverter();
     this.logger = config.logger ?? {
       child: () => this.logger,
       debug: () => {},
@@ -220,7 +225,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     _messageId: string,
     _message: AdapterPostableMessage
   ): Promise<RawMessage<QQRawMessage>> {
-    throw new NotImplementedError('QQ adapter does not support editMessage yet', 'editMessage');
+    throw new NotImplementedError('QQ adapter does not support message editing.', 'editMessage');
   }
 
   /** 删除指定消息。 */
@@ -229,53 +234,220 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     await client.delete_msg({ message_id: toNumberId(messageId, 'messageId') });
   }
 
-  /** QQ 暂不支持反应能力（添加）。 */
+  /** 添加消息表情反应（映射到 NapCat emoji_like）。 */
   public async addReaction(
-    _threadId: string,
-    _messageId: string,
-    _emoji: EmojiValue | string
+    threadId: string,
+    messageId: string,
+    emoji: EmojiValue | string
   ): Promise<void> {
-    throw new NotImplementedError('QQ adapter does not support addReaction yet', 'addReaction');
+    const client = this.requireClient();
+    this.decodeThreadId(threadId);
+
+    const emojiId = normalizeQQEmojiId(emoji);
+    await client.set_msg_emoji_like({
+      message_id: toNumberId(messageId, 'messageId'),
+      emoji_id: emojiId,
+      set: true
+    });
   }
 
-  /** QQ 暂不支持反应能力（移除）。 */
+  /** 移除消息表情反应（映射到 NapCat emoji_like）。 */
   public async removeReaction(
-    _threadId: string,
-    _messageId: string,
-    _emoji: EmojiValue | string
+    threadId: string,
+    messageId: string,
+    emoji: EmojiValue | string
   ): Promise<void> {
-    throw new NotImplementedError(
-      'QQ adapter does not support removeReaction yet',
-      'removeReaction'
-    );
+    const client = this.requireClient();
+    this.decodeThreadId(threadId);
+
+    const emojiId = normalizeQQEmojiId(emoji);
+    await client.set_msg_emoji_like({
+      message_id: toNumberId(messageId, 'messageId'),
+      emoji_id: emojiId,
+      set: false
+    });
   }
 
-  /** QQ 暂不支持历史消息分页拉取。 */
+  /** 拉取会话消息历史（支持 forward/backward）。 */
   public async fetchMessages(
-    _threadId: string,
-    _options?: FetchOptions
+    threadId: string,
+    options?: FetchOptions
   ): Promise<FetchResult<QQRawMessage>> {
-    throw new NotImplementedError('QQ adapter does not support fetchMessages yet', 'fetchMessages');
+    const client = this.requireClient();
+    const parsed = this.decodeThreadId(threadId);
+    const peerId = toNumberId(parsed.peerId, 'peerId');
+    const direction = options?.direction ?? 'backward';
+
+    const limit = options?.limit ?? 50;
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new ValidationError(
+        'qq',
+        `QQ fetch limit must be a positive integer: ${String(limit)}`
+      );
+    }
+
+    let cursorSeq: number | undefined;
+    if (options?.cursor !== undefined) {
+      cursorSeq = toNumberId(options.cursor, 'cursor');
+    }
+
+    const historyParams: {
+      message_seq?: number;
+      count?: number;
+      reverseOrder?: boolean;
+    } = {
+      // NapCat reverseOrder=true aligns with Chat "backward" page direction.
+      count: cursorSeq !== undefined ? limit + 1 : limit,
+      reverseOrder: direction === 'backward'
+    };
+    if (cursorSeq !== undefined) {
+      historyParams.message_seq = cursorSeq;
+    }
+
+    const result =
+      parsed.chatType === 'group'
+        ? await client.get_group_msg_history({
+            group_id: peerId,
+            ...historyParams
+          })
+        : await client.get_friend_msg_history({
+            user_id: peerId,
+            ...historyParams
+          });
+
+    const candidates = cursorSeq
+      ? // NapCat page includes the cursor message itself; drop it for stable pagination.
+        result.messages.filter((item) => item.message_seq !== cursorSeq)
+      : result.messages;
+
+    const ordered = [...candidates];
+
+    const messages = ordered.map((raw) => this.parseMessage(raw));
+    if (messages.length === 0) {
+      return { messages };
+    }
+
+    if (ordered.length < limit) {
+      return { messages };
+    }
+
+    const cursorSource = direction === 'backward' ? ordered[0] : ordered[ordered.length - 1];
+    const nextCursor = String(cursorSource.message_seq);
+    if (nextCursor === options?.cursor) {
+      return { messages };
+    }
+
+    return {
+      messages,
+      nextCursor
+    };
   }
 
-  /** 获取 thread 基础信息。 */
+  /** 获取 thread 详细信息（通过 NapCat 查询）。 */
   public async fetchThread(threadId: string): Promise<ThreadInfo> {
+    const client = this.requireClient();
     const parsed = this.decodeThreadId(threadId);
+    const peerId = toNumberId(parsed.peerId, 'peerId');
+
+    if (parsed.chatType === 'group') {
+      const info = await client.get_group_info({ group_id: peerId });
+
+      return {
+        id: threadId,
+        channelId: threadId,
+        channelName: info.group_name,
+        isDM: false,
+        metadata: {
+          chatType: parsed.chatType,
+          peerId: parsed.peerId,
+          group: info
+        }
+      };
+    }
+
+    const profile = await client.get_stranger_info({ user_id: peerId });
+    const channelName = profile.remark || profile.nickname || profile.nick || String(peerId);
 
     return {
       id: threadId,
       channelId: threadId,
-      isDM: parsed.chatType === 'private',
+      channelName,
+      isDM: true,
       metadata: {
         chatType: parsed.chatType,
-        peerId: parsed.peerId
+        peerId: parsed.peerId,
+        private: profile
       }
     };
   }
 
-  /** 当前实现不发送真实 typing，仅作为 no-op。 */
-  public startTyping(_threadId: string, _status?: string): Promise<void> {
-    return Promise.resolve();
+  /** 获取 channel 信息（QQ 采用会话即 channel 模型，委托到 fetchThread）。 */
+  public async fetchChannelInfo(channelId: string): Promise<ChannelInfo> {
+    const thread = await this.fetchThread(channelId);
+    const metadata = thread.metadata;
+    const memberCount = typeof metadata.memberCount === 'number' ? metadata.memberCount : undefined;
+
+    return {
+      id: channelId,
+      isDM: thread.isDM,
+      name: thread.channelName,
+      memberCount,
+      metadata
+    };
+  }
+
+  /** 获取 channel 消息（QQ 采用会话即 channel 模型，委托到 fetchMessages）。 */
+  public async fetchChannelMessages(
+    channelId: string,
+    options?: FetchOptions
+  ): Promise<FetchResult<QQRawMessage>> {
+    return this.fetchMessages(channelId, options);
+  }
+
+  /** 根据 messageId 拉取单条消息。 */
+  public async fetchMessage(
+    threadId: string,
+    messageId: string
+  ): Promise<Message<QQRawMessage> | null> {
+    const client = this.requireClient();
+    this.decodeThreadId(threadId);
+
+    const raw = await client.get_msg({
+      message_id: toNumberId(messageId, 'messageId')
+    });
+
+    const rawThreadId = this.encodeThreadId(toThreadId(raw));
+    if (rawThreadId !== threadId) {
+      return null;
+    }
+
+    return this.parseMessage(raw);
+  }
+
+  /** 打开与指定用户的私聊会话。 */
+  public async openDM(userId: string): Promise<string> {
+    const parsedUserId = toNumberId(userId, 'userId');
+
+    return this.encodeThreadId({
+      chatType: 'private',
+      peerId: String(parsedUserId)
+    });
+  }
+
+  /** 私聊支持 typing；群聊为 no-op。 */
+  public async startTyping(threadId: string, status?: string): Promise<void> {
+    const client = this.requireClient();
+    const parsed = this.decodeThreadId(threadId);
+
+    if (parsed.chatType !== 'private') {
+      this.logger.debug('skip typing for non-private thread', threadId, status);
+      return;
+    }
+
+    await client.set_input_status({
+      user_id: parsed.peerId,
+      event_type: 1
+    });
   }
 
   /** 渲染格式化内容到 QQ 文本。 */
@@ -311,6 +483,8 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
     this.client.on('message.group', this.onGroupMessage);
     this.client.on('message.private', this.onPrivateMessage);
+    this.client.on('notice.group_msg_emoji_like', this.onEmojiLikeMessage);
+
     this.listenersBound = true;
   }
 
@@ -320,6 +494,31 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
   private readonly onPrivateMessage = (raw: QQPrivateMessage): void => {
     this.dispatchIncomingMessage(raw);
+  };
+
+  private readonly onEmojiLikeMessage = (raw: QQEmojiLikeMessage): void => {
+    this.logger.debug('receive emoji like message', raw);
+
+    const isMe = this.selfId !== undefined && String(raw.user_id) === this.selfId;
+
+    for (const like of raw.likes) {
+      this.chat?.processReaction({
+        adapter: this,
+        threadId: this.encodeThreadId({ chatType: 'group', peerId: String(raw.group_id) }),
+        messageId: String(raw.message_id),
+        emoji: emoji.custom(like.emoji_id),
+        rawEmoji: like.emoji_id,
+        added: (raw as any).is_add ?? true,
+        user: {
+          userId: String(raw.user_id),
+          userName: String(raw.user_id),
+          fullName: String(raw.user_id),
+          isBot: isMe,
+          isMe
+        },
+        raw
+      });
+    }
   };
 
   /**

@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { createMemoryState } from '@chat-adapter/state-memory';
-import { type Message, type Thread, Chat, NotImplementedError } from 'chat';
+import { type EmojiValue, type Message, type Thread, Chat, NotImplementedError } from 'chat';
 
 import { createQQAdapter, type QQGroupMessage, type QQPrivateMessage } from '../src/index.js';
 
-import { attachMockClient, createGroupMessage, MockNapcatClient } from './napcat-mock.js';
+import {
+  attachMockClient,
+  createGroupMessage,
+  createPrivateMessage,
+  MockNapcatClient
+} from './napcat-mock.js';
 
 async function flush(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -227,20 +232,206 @@ describe('QQ adapter methods', () => {
     expect(response.status).toBe(501);
   });
 
-  it('throws NotImplementedError for deferred APIs', async () => {
-    const adapter = createQQAdapter({
-      napcat: { baseUrl: 'ws://localhost:3001' }
+  it('keeps editMessage explicitly unsupported', async () => {
+    const ctx = await createQQTestContext();
+    await expect(ctx.adapter.editMessage('qq:group:1', '1', 'x')).rejects.toBeInstanceOf(
+      NotImplementedError
+    );
+  });
+
+  it('maps reactions to emoji_like APIs', async () => {
+    const ctx = await createQQTestContext();
+    const emojiValue = { name: '128077' } as unknown as EmojiValue;
+
+    await ctx.adapter.addReaction('qq:group:30003', '42', emojiValue);
+    await ctx.adapter.removeReaction('qq:group:30003', '42', '128077');
+
+    expect(ctx.client.emojiLikeCalls).toEqual([
+      { message_id: 42, emoji_id: '128077', set: true },
+      { message_id: 42, emoji_id: '128077', set: false }
+    ]);
+  });
+
+  it('fetches group/private histories with pagination and direction', async () => {
+    const ctx = await createQQTestContext();
+    const groupMessages = [
+      createGroupMessage([{ type: 'text', data: { text: 'm1' } }], {
+        groupId: 30003,
+        messageId: 101,
+        messageSeq: 1,
+        time: 1710000001
+      }),
+      createGroupMessage([{ type: 'text', data: { text: 'm2' } }], {
+        groupId: 30003,
+        messageId: 102,
+        messageSeq: 2,
+        time: 1710000002
+      }),
+      createGroupMessage([{ type: 'text', data: { text: 'm3' } }], {
+        groupId: 30003,
+        messageId: 103,
+        messageSeq: 3,
+        time: 1710000003
+      }),
+      createGroupMessage([{ type: 'text', data: { text: 'm4' } }], {
+        groupId: 30003,
+        messageId: 104,
+        messageSeq: 4,
+        time: 1710000004
+      }),
+      createGroupMessage([{ type: 'text', data: { text: 'm5' } }], {
+        groupId: 30003,
+        messageId: 105,
+        messageSeq: 5,
+        time: 1710000005
+      })
+    ];
+    ctx.client.setGroupHistory(30003, groupMessages);
+    ctx.client.setFriendHistory(20002, [
+      createPrivateMessage([{ type: 'text', data: { text: 'p1' } }], {
+        userId: 20002,
+        messageId: 201,
+        messageSeq: 1
+      }),
+      createPrivateMessage([{ type: 'text', data: { text: 'p2' } }], {
+        userId: 20002,
+        messageId: 202,
+        messageSeq: 2
+      })
+    ]);
+
+    const latest = await ctx.adapter.fetchMessages('qq:group:30003', {
+      limit: 2,
+      direction: 'backward'
+    });
+    expect(latest.messages.map((item) => item.id)).toEqual(['104', '105']);
+    expect(latest.nextCursor).toBe('4');
+
+    const older = await ctx.adapter.fetchMessages('qq:group:30003', {
+      limit: 2,
+      direction: 'backward',
+      cursor: latest.nextCursor
+    });
+    expect(older.messages.map((item) => item.id)).toEqual(['102', '103']);
+    expect(older.nextCursor).toBe('2');
+
+    const forward = await ctx.adapter.fetchMessages('qq:group:30003', {
+      limit: 2,
+      direction: 'forward'
+    });
+    expect(forward.messages.map((item) => item.id)).toEqual(['101', '102']);
+    expect(forward.nextCursor).toBe('2');
+
+    const privateResult = await ctx.adapter.fetchMessages('qq:private:20002', { limit: 1 });
+    expect(privateResult.messages.map((item) => item.id)).toEqual(['202']);
+
+    expect(ctx.client.groupHistoryCalls.length).toBeGreaterThanOrEqual(3);
+    expect(ctx.client.friendHistoryCalls.length).toBe(1);
+  });
+
+  it('fetches thread metadata from NapCat APIs', async () => {
+    const ctx = await createQQTestContext();
+    ctx.client.setGroupInfo(30003, {
+      group_all_shut: 0,
+      group_remark: 'remark',
+      group_id: 30003,
+      group_name: 'My Group',
+      member_count: 233,
+      max_member_count: 500
+    });
+    ctx.client.setStrangerInfo(20002, {
+      user_id: 20002,
+      nickname: 'alice',
+      nick: 'alice',
+      remark: 'teammate',
+      sex: 'female',
+      qid: 'alice_qid',
+      qqLevel: 12
     });
 
-    await expect(adapter.editMessage('qq:group:1', '1', 'x')).rejects.toBeInstanceOf(
-      NotImplementedError
+    const groupThread = await ctx.adapter.fetchThread('qq:group:30003');
+    expect(groupThread.channelName).toBe('My Group');
+    expect(groupThread.isDM).toBe(false);
+    expect(groupThread.metadata.group).toMatchObject({
+      group_id: 30003,
+      group_name: 'My Group',
+      member_count: 233
+    });
+
+    const privateThread = await ctx.adapter.fetchThread('qq:private:20002');
+    expect(privateThread.channelName).toBe('teammate');
+    expect(privateThread.isDM).toBe(true);
+    expect(privateThread.metadata.private).toMatchObject({
+      user_id: 20002,
+      nickname: 'alice',
+      remark: 'teammate'
+    });
+  });
+
+  it('supports typing for private threads and no-op for group threads', async () => {
+    const ctx = await createQQTestContext();
+
+    await ctx.adapter.startTyping('qq:private:20002', 'typing');
+    await ctx.adapter.startTyping('qq:group:30003', 'typing');
+
+    expect(ctx.client.inputStatusCalls).toEqual([
+      {
+        user_id: '20002',
+        event_type: 1
+      }
+    ]);
+  });
+
+  it('implements optional fetch/open/channel helpers', async () => {
+    const ctx = await createQQTestContext();
+    ctx.client.setMessage(
+      createGroupMessage([{ type: 'text', data: { text: 'single' } }], {
+        groupId: 30003,
+        messageId: 700,
+        messageSeq: 700
+      })
     );
-    await expect(adapter.addReaction('qq:group:1', '1', '👍')).rejects.toBeInstanceOf(
-      NotImplementedError
+    ctx.client.setMessage(
+      createPrivateMessage([{ type: 'text', data: { text: 'private-only' } }], {
+        userId: 20002,
+        messageId: 701,
+        messageSeq: 701
+      })
     );
-    await expect(adapter.removeReaction('qq:group:1', '1', '👍')).rejects.toBeInstanceOf(
-      NotImplementedError
-    );
-    await expect(adapter.fetchMessages('qq:group:1')).rejects.toBeInstanceOf(NotImplementedError);
+    ctx.client.setGroupInfo(30003, {
+      group_all_shut: 0,
+      group_remark: '',
+      group_id: 30003,
+      group_name: 'Channel Group',
+      member_count: 10,
+      max_member_count: 200
+    });
+    ctx.client.setGroupHistory(30003, [
+      createGroupMessage([{ type: 'text', data: { text: 'channel msg' } }], {
+        groupId: 30003,
+        messageId: 801,
+        messageSeq: 1
+      })
+    ]);
+
+    const fetched = await ctx.adapter.fetchMessage('qq:group:30003', '700');
+    expect(fetched?.id).toBe('700');
+    const mismatch = await ctx.adapter.fetchMessage('qq:group:30003', '701');
+    expect(mismatch).toBeNull();
+
+    await expect(ctx.adapter.openDM('20002')).resolves.toBe('qq:private:20002');
+
+    const channelInfo = await ctx.adapter.fetchChannelInfo('qq:group:30003');
+    expect(channelInfo.name).toBe('Channel Group');
+    expect(channelInfo.metadata.group).toMatchObject({
+      group_id: 30003,
+      group_name: 'Channel Group',
+      member_count: 10
+    });
+
+    const channelMessages = await ctx.adapter.fetchChannelMessages('qq:group:30003', {
+      limit: 1
+    });
+    expect(channelMessages.messages).toHaveLength(1);
   });
 });
