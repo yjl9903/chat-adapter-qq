@@ -48,7 +48,7 @@
   },
   "devDependencies": {
     "@chat-adapter/state-memory": "^4.19.0",
-    "chat": "^4.18.0"
+    "chat": "^4.19.0"
   },
   "peerDependencies": {
     "chat": "^4.0.0"
