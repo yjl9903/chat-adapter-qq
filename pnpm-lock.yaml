@@ -49,7 +49,7 @@ importers:
         specifier: ^4.19.0
         version: 4.19.0
       chat:
-        specifier: ^4.18.0
+        specifier: ^4.19.0
         version: 4.19.0
 
 packages:
