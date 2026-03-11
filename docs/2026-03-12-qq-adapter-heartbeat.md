@@ -1,94 +1,74 @@
 # qq adapter heartbeat - 2026-03-12
 
+Status: `current`
+
+## Scope
+
+This document describes heartbeat behavior for QQ adapter NapCat connections.
+
+For full adapter status, see `docs/2026-03-12-qq-adapter-current-status.md`.
+
 ## Reference
 
-- Adapter implementation: `packages/chat-adapter-qq/src/adapter.ts`
-- Heartbeat manager: `packages/chat-adapter-qq/src/heartbeat.ts`
-- Config types: `packages/chat-adapter-qq/src/types.ts`
-- Factory validation: `packages/chat-adapter-qq/src/factory.ts`
-- Heartbeat tests: `packages/chat-adapter-qq/test/heartbeat.test.ts`
-- NapCat SDK API typings: `node_modules/node-napcat-ts/dist/NCWebsocketApi.d.ts`
+- adapter runtime: `packages/chat-adapter-qq/src/adapter.ts`
+- heartbeat manager: `packages/chat-adapter-qq/src/heartbeat.ts`
+- config types: `packages/chat-adapter-qq/src/types.ts`
+- factory validation: `packages/chat-adapter-qq/src/factory.ts`
+- tests: `packages/chat-adapter-qq/test/heartbeat.test.ts`
 
-## Background
+## Health probe
 
-This iteration adds heartbeat to QQ adapter, using NapCat status polling to detect WS connection health and trigger recovery when needed.
+Heartbeat uses NapCat `get_status()` only.
 
-- `QQNapcatConnectionHeartbeat` in `src/heartbeat.ts`
+Healthy condition:
 
-## API Selection
+- `status.online === true`
+- `status.good === true`
 
-Heartbeat polling uses NapCat `get_status()` as the health probe.
+Unhealthy condition:
 
-- healthy condition: `status.online === true && status.good === true`
-- unhealthy condition: request failure, or `online/good` check fails
-
-No HTTP health endpoint is used in adapter runtime. WS-side API polling remains the single heartbeat path.
-
-## Architecture
-
-### QQAdapter responsibilities
-
-`QQAdapter` now:
-
-1. Creates/holds `QQNapcatConnectionHeartbeat`.
-2. Starts heartbeat after successful login in `initialize`.
-3. Stops heartbeat in `shutdown`.
-4. Provides reconnect callback (`reconnectClient`) used by heartbeat manager.
-
-### Heartbeat class responsibilities
-
-`QQNapcatConnectionHeartbeat` manages:
-
-1. Polling schedule via `setInterval`.
-2. In-flight deduplication (at most one heartbeat check at a time).
-3. Consecutive failure counting.
-4. Threshold-based reconnect trigger.
-5. Recovery-state guard to prevent concurrent reconnect attempts.
+- API request throws, or
+- any of `online/good` is false
 
 ## Lifecycle
 
 1. Adapter initializes and connects NapCat.
 2. Adapter fetches login info and sets `selfId/userName`.
 3. Adapter starts heartbeat manager.
-4. Manager polls `get_status()` periodically.
-5. On consecutive failures reaching threshold, manager calls reconnect callback.
-6. Adapter reconnect callback refreshes login state after reconnect.
-7. Adapter shutdown stops heartbeat manager and disconnects client.
+4. Manager polls `get_status()` by interval.
+5. On consecutive failures reaching threshold, manager runs reconnect callback.
+6. Adapter reconnect callback refreshes login state.
+7. Adapter shutdown stops heartbeat and disconnects client.
 
-## Config and Defaults
+## Config and defaults
 
-Heartbeat is forcibly enabled once adapter initialization succeeds.
+- `heartbeat.intervalMs` default: `30000`
+- `heartbeat.failureThreshold` default: `2`
+- `heartbeat.reconnectOnFailure` default: `true`
 
-Optional tuning remains:
+Validation in factory:
 
-- `heartbeat.intervalMs` (default: `30000`)
-- `heartbeat.failureThreshold` (default: `2`)
-- `heartbeat.reconnectOnFailure` (default: `true`)
+- `intervalMs` must be positive integer
+- `failureThreshold` must be positive integer
 
-Factory-level validation:
+## Failure/recovery policy
 
-- `intervalMs` must be a positive integer
-- `failureThreshold` must be a positive integer
+- at most one heartbeat check in-flight at a time
+- consecutive failures increment counter
+- if `reconnectOnFailure` and counter reaches threshold:
+  - trigger reconnect once (guarded by `recovering` flag)
+  - reset failure counter on successful reconnect
+- reconnect errors are logged; next polling cycle continues
 
-## Failure Strategy
+## Tests
 
-For each poll:
+`packages/chat-adapter-qq/test/heartbeat.test.ts` covers:
 
-1. If `get_status()` throws, count as one failure.
-2. If `online/good` is unhealthy, count as one failure.
-3. If failure count >= threshold and reconnect is enabled, attempt reconnect.
-4. On successful reconnect, reset failure counter.
-5. If reconnect fails, keep manager running and continue next polling cycle.
+1. interval polling behavior
+2. unhealthy status trigger + reconnect
+3. no more polling after adapter shutdown
 
-## Testing Checklist
-
-Covered by `test/heartbeat.test.ts`:
-
-1. Polling runs at configured interval (`get_status` call count assertion).
-2. Unhealthy heartbeat triggers reconnect when threshold is reached.
-3. Shutdown stops polling and prevents further status checks.
-
-Recommended regression checks:
+## Verification commands
 
 - `pnpm --filter chat-adapter-qq test:ci`
 - `pnpm --filter chat-adapter-qq typecheck`

@@ -5,8 +5,8 @@
 This repository is a `pnpm` workspace with packages under `packages/*`.  
 The main implementation lives in `packages/chat-adapter-qq/`.
 
-- Source code: `packages/chat-adapter-qq/src` (`adapter.ts`, `factory.ts`, `format-converter.ts`, etc.)
-- Tests: `packages/chat-adapter-qq/test` (`index.test.ts`, `napcat-mock.ts`)
+- Source code: `packages/chat-adapter-qq/src` (`adapter.ts`, `factory.ts`, `converter/index.ts`, `heartbeat.ts`, etc.)
+- Tests: `packages/chat-adapter-qq/test` (`adapter-basics.test.ts`, `messaging-apis.test.ts`, `thread-member-queries.test.ts`, `message-parsing.test.ts`, `napcat-mock.ts`)
 - Example usage: `examples/chat.ts`
 - Notes/design docs: `docs/`
 
@@ -16,8 +16,14 @@ Build artifacts are generated to `packages/chat-adapter-qq/dist` by `tsdown`.
 
 Index of project development documentation under `docs/`:
 
-- `docs/2026-03-10-qq-adapter-mvp-baseline.md`: QQ adapter MVP baseline and phase notes
-- `docs/2026-03-11-qq-adapter-interface-completion.md`: Interface completion scope, API mapping, and test checklist
+- `docs/README.md`: docs index and maintenance notes
+- `docs/2026-03-12-qq-adapter-current-status.md`: current adapter implementation snapshot
+- `docs/2026-03-12-qq-adapter-heartbeat.md`: heartbeat architecture and reconnect policy
+- `docs/2026-03-11-qq-adapter-message-markdown-parsing.md`: inbound parsing pipeline and mapping rules
+- `docs/2026-03-11-qq-adapter-member-queries.md`: QQ-specific member query APIs
+- `docs/2026-03-11-qq-adapter-emoji-unicode.md`: emoji name/codepoint reference
+- `docs/2026-03-11-qq-adapter-interface-completion.md`: historical interface-completion milestone notes
+- `docs/2026-03-10-qq-adapter-mvp-baseline.md`: historical MVP baseline
 
 Add new development documents in `docs/` and use the `YYYY-MM-DD-topic.md` naming pattern.
 
@@ -39,7 +45,7 @@ TypeScript is configured in strict mode (`tsconfig.json`). Follow existing ESM s
 
 - Formatting: Prettier (`semi: true`, `singleQuote: true`, `printWidth: 100`, `trailingComma: none`)
 - Indentation: 2 spaces
-- File names: lower-case, use kebab-case when multi-word (for example, `format-converter.ts`)
+- File names: lower-case, use kebab-case when multi-word (for example, `cached-client.ts`)
 - Tests: `*.test.ts` suffix
 
 Prefer small, focused modules in `src/` and keep adapter behavior (thread IDs, NapCat mapping, message conversion) covered by tests.
@@ -51,7 +57,7 @@ Tests use Vitest (`environment: node`, `globals: true`). Coverage uses V8 with `
 - Run all tests: `pnpm test:ci`
 - Run package tests locally: `pnpm --filter chat-adapter-qq test`
 
-When changing adapter logic, add or update tests in `packages/chat-adapter-qq/test/index.test.ts` and use `napcat-mock.ts` for protocol-facing behavior.
+When changing adapter logic, add or update focused tests in `packages/chat-adapter-qq/test/*.test.ts` (for example, `messaging-apis.test.ts`, `thread-member-queries.test.ts`, `message-parsing.test.ts`) and use `napcat-mock.ts` for protocol-facing behavior.
 
 ## Commit & Pull Request Guidelines
 

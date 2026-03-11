@@ -1,8 +1,10 @@
 # qq adapter mvp baseline - 2026-03-10
 
+Status: `historical`
+
 > Historical baseline document.
 > Current implementation details and post-MVP behavior are tracked in:
-> `docs/2026-03-11-qq-adapter-interface-completion.md`.
+> `docs/2026-03-12-qq-adapter-current-status.md`.
 
 ## Reference Docs
 

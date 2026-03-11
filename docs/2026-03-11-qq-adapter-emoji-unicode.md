@@ -1,10 +1,12 @@
-# Chat 内置常用 Emoji 列表（Unicode 十进制码点）
+# Chat Built-in Emoji List (Unicode Decimal Code Points)
 
-- 来源：`chat@4.19.0` 的 `node_modules/chat/dist/index.js` 中 `wellKnownEmoji` 与 `DEFAULT_EMOJI_MAP`。
-- 编码口径：`Unicode 十进制码点`。例如 `😊 = 128522`。
-- 说明：部分 emoji 为多个码点（含变体选择符 `65039`），因此会显示多个十进制数。
+Status: `reference`
 
-| name (字符串常量) | 常量访问表达式 | emoji | Unicode 十进制码点 |
+- Source: `wellKnownEmoji` and `DEFAULT_EMOJI_MAP` from `node_modules/chat/dist/index.js` in `chat@4.19.0`.
+- Encoding format: Unicode decimal code points, e.g. `😊 = 128522`.
+- Note: Some emojis use multiple code points (including variation selector `65039`), so multiple decimal values are listed.
+
+| name (string constant) | constant access expression | emoji | Unicode decimal code points |
 |---|---|---|---|
 | `thumbs_up` | `emoji.thumbs_up.name` | 👍 | `128077` |
 | `thumbs_down` | `emoji.thumbs_down.name` | 👎 | `128078` |
@@ -109,7 +111,7 @@
 | `snow` | `emoji.snow.name` | ❄️ | `10052 65039` |
 | `rainbow` | `emoji.rainbow.name` | 🌈 | `127752` |
 
-## 参考位置
+## Reference locations
 
-- `node_modules/chat/dist/index.js`（`DEFAULT_EMOJI_MAP`）
-- `node_modules/chat/dist/index.js`（`wellKnownEmoji`）
+- `node_modules/chat/dist/index.js` (`DEFAULT_EMOJI_MAP`)
+- `node_modules/chat/dist/index.js` (`wellKnownEmoji`)

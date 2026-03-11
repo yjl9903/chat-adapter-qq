@@ -1,88 +1,88 @@
 # qq adapter message markdown parsing - 2026-03-11
 
-## Background
-
-The QQ adapter previously parsed incoming NapCat segments into plain text with simple placeholders, then generated `formatted` from that text. This lost structure for non-text segments.
-
-This document records the implementation design for upgrading inbound parsing to:
-
-1. NapCat segments -> Markdown text
-2. Markdown text -> Chat SDK AST (`parseMarkdown`)
-3. AST -> plain text (`toPlainText`)
+Status: `current`
 
 ## Scope
 
-In scope:
+Inbound parsing path for QQ adapter:
 
-- Inbound parsing path (`parseMessage` + `parseThreadMessage`)
-- `QQFormatConverter` owns NapCat segment-to-markdown parsing
-- richer attachment extraction for image/file/video/record
-- resolve `reply` / `forward` by NapCat query APIs in async parse path
+1. NapCat segments -> Markdown text
+2. Markdown -> Chat SDK AST (`parseMarkdown`)
+3. AST -> plain text (`toPlainTextPreserveBreaks`)
 
-Out of scope:
+For full adapter status, see `docs/2026-03-12-qq-adapter-current-status.md`.
 
-- outbound message segment rendering (`postMessage` remains text segment only)
+## Main implementation
 
-## Parsing Strategy
+- converter: `packages/chat-adapter-qq/src/converter/index.ts`
+- plain-text renderer: `packages/chat-adapter-qq/src/converter/to-plain-text.ts`
+- adapter entry points:
+  - sync: `QQAdapter.parseMessage(raw)`
+  - async: `QQAdapter.parseThreadMessage(raw)`
 
-### Primary pipeline
+## Parsing modes
 
-- `QQFormatConverter.parseIncomingSync(raw)` is used by sync parse path.
-- `QQFormatConverter.parseIncoming(raw)` is used by async parse path and can call NapCat APIs.
-- Both return:
-  - `markdown`
-  - `formatted`
-  - `text`
-  - `attachments`
+### Sync path (`parseIncomingSync`)
 
-### Runtime assumptions
+- pure segment mapping
+- no NapCat API calls
+- `reply`/`forward` use placeholders
 
-- `reply` segment only appears as the first non-filtered segment of a message.
-- `forward` segment appears as a standalone message (single non-filtered segment).
-- `get_msg(message_id)` for a standalone forward message returns fully expanded quoted content
-  (including nested forward content).
-- `forward.data.content` is treated as full message objects and is parsed recursively without depth cap.
+### Async path (`parseIncoming`)
 
-### Segment mapping rules
+- supports reply/forward expansion through NapCat `get_msg`
+- used by `parseThreadMessage`, which is the runtime path for inbound dispatch
+
+## Segment mapping (current)
 
 - `text` -> raw text
-- `at` -> `@{qq}` / `@all`
-- `face` -> `[face:{id}]`
-- `image` -> markdown image `![name](url)`; if no URL, fallback to `image: {name}`
-- `video` / `record` / `file`:
-  - if URL is available, output markdown link `[name](url)`
-  - if URL is unavailable, output plain text `attachment: {name}`
-- `reply`:
-  - sync path: blockquote placeholder `> reply #{id} (placeholder)`
-  - async path: call `get_msg`, render quote block as `发送人 + 消息体`; fallback to placeholder on failure
-- `forward`:
-  - sync path: blockquote placeholder `> forward #{id} (placeholder)`
-  - async path: call `get_msg` with the current message id and reuse returned expanded content
-  - fallback to placeholder on API failure
-- `markdown` -> inline raw markdown content
-- `dice` -> `[dice:{result}]`
-- `json` -> `[json]`
-- `rps` / `poke` / `shake` -> filtered out
+- `at` -> `@{qq}` or `@所有人`
+- `face` -> `表情:{id}`
+- `image`
+  - with URL: markdown image `![name](url)`
+  - without URL: fallback label `图片:{name}`
+- `file`
+  - if `file` is URL: markdown link `[name](url)`
+  - otherwise: fallback label `附件:{name}`
+- `video`
+  - prefer `url`, fallback to `file` when it is URL
+  - otherwise: fallback label `视频:{name}`
+- `record`
+  - if `file` is URL: markdown link
+  - otherwise: fallback label `音频:{name}`
+- `reply`
+  - sync: placeholder quote
+  - async (first active segment only): fetch quoted message and render blockquote with author + body
+- `forward`
+  - sync: placeholder quote
+  - async when standalone message: fetch expanded content via current message `get_msg`
+  - sync also supports inline `forward.data.content` recursive rendering when content exists
+- `markdown` -> raw markdown content
+- filtered out: `rps`, `poke`, `shake`
+- other unsupported segment types currently render as empty text
 
-### Attachment policy
+## Attachment extraction
 
-- keep generating Chat SDK attachments for media/file segments
-- populate `name/url/size` when available
-- `file_size` is parsed from string to number when valid
+Converter also emits Chat SDK attachments for:
 
-## Compatibility Notes
+- `image` -> `type: image`
+- `file` -> `type: file`
+- `video` -> `type: video`
+- `record` -> `type: audio`
 
-- mention detection is unchanged (`isMention` still uses `at selfId` for groups and always true for private)
-- no public API signature change
-- text rendering may differ for non-text segments due to markdown conversion
+When available, converter fills `name`, `url`, and parsed numeric `size`.
 
-## Test Plan
+## Runtime assumptions
 
-- Update parse tests to assert:
-  - markdown-derived `text` contains mention and generated placeholders/labels
-  - image segment yields image attachment with size
-  - file/video/record link behavior with and without URL
-  - sync parse keeps reply/forward placeholders
-  - async parse resolves reply/forward into quote content when API data is available
-  - `rps`/`poke` are filtered from resulting text
-- Keep integration tests green to ensure event flow regressions are not introduced.
+- reply expansion is attempted only when `reply` is the first non-filtered segment
+- standalone forward expansion uses `get_msg(message_id)` on current message
+- on expansion failure, converter falls back to placeholders
+
+## Tests
+
+- `packages/chat-adapter-qq/test/message-parsing.test.ts`
+  - attachments and markdown/plain-text rendering
+  - reply/forward placeholders
+  - async reply quote expansion
+  - async standalone forward expansion
+  - nested forward expansion

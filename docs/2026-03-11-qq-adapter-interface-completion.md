@@ -1,136 +1,86 @@
 # qq adapter interface completion - 2026-03-11
 
-## Reference
+Status: `historical`
 
-- `chat` adapter contract: `node_modules/chat/dist/index.d.ts`
-- Community adapter guide: `node_modules/chat/docs/contributing/building.mdx`
-- NapCat SDK API: `node_modules/node-napcat-ts/dist/NCWebsocketApi.d.ts`
-- NapCat request/response types: `node_modules/node-napcat-ts/dist/Interfaces.d.ts`
-- Implementation: `packages/chat-adapter-qq/src/adapter.ts`
-- Cached client: `packages/chat-adapter-qq/src/napcat/cached-client.ts`
-- Runtime example: `examples/history.ts`
+> This file records the March 11 interface-completion milestone.
+> For the latest behavior, see `docs/2026-03-12-qq-adapter-current-status.md`.
 
-## Status
+## Milestone scope
 
-This document now reflects **implemented behavior** (not pending design) for the QQ adapter interface completion.
+This phase completed the main Chat adapter interface for QQ on top of NapCat:
 
-Implemented in this round:
+1. completed required methods and explicit unsupported behavior
+2. completed core optional query APIs
+3. added QQ-specific thread/channel member query APIs
+4. added query-side cache layer and pagination flow
 
-1. `editMessage`: explicitly unsupported.
-2. `addReaction` / `removeReaction`: implemented via NapCat emoji-like APIs.
-3. `fetchMessages`: implemented with pagination.
-4. `fetchThread`: implemented with API-backed full metadata.
-5. `startTyping`: implemented via input-status API.
-6. Add useful optional Chat APIs with clear behavior.
-7. QQ custom member query APIs for thread/channel.
-8. Query cache layer with memoized NapCat read APIs.
-
-## Adapter Coverage (Implemented)
+## Delivered API coverage (at milestone)
 
 Required methods:
 
-- `editMessage`: throws explicit `NotImplementedError`.
-- `addReaction` / `removeReaction`: call `set_msg_emoji_like`.
-- `fetchMessages`: support both `direction: backward | forward`.
-- `fetchThread`: call platform APIs instead of returning decode-only metadata.
-- `startTyping`: private chat calls API; group chat no-op with debug log.
+- `editMessage`: throws explicit `NotImplementedError`
+- `addReaction` / `removeReaction`: mapped to `set_msg_emoji_like`
+- `fetchMessages`: backward/forward directions + cursor pagination
+- `fetchThread`: API-backed thread metadata (group/private)
+- `startTyping`: private call, group no-op
 
-Optional methods added:
+Optional methods:
 
-- `fetchMessage(threadId, messageId)` -> `get_msg` + thread consistency check.
-- `openDM(userId)` -> return encoded `qq:private:{userId}`.
-- `fetchChannelInfo(channelId)` and `fetchChannelMessages(channelId, options)` -> delegate to thread-level methods (QQ uses conversation-as-thread model).
-- Reaction ingress support: listens `notice.group_msg_emoji_like` and emits Chat SDK reaction events via `chat.processReaction(...)`.
+- `fetchMessage(threadId, messageId)`
+- `openDM(userId)`
+- `fetchChannelInfo(channelId)`
+- `fetchChannelMessages(channelId, options)`
 
-QQ custom extension methods added:
+QQ extension methods:
 
 - `fetchThreadMembers(threadId)`
 - `fetchThreadMember(threadId, userId)`
 - `fetchChannelMembers(channelId)`
 - `fetchChannelMember(channelId, userId)`
 
-## Chat-to-NapCat Mapping
+## API mapping snapshot
 
-- Reaction add:
-  - `set_msg_emoji_like({ message_id, emoji_id, set: true })`
-- Reaction remove:
-  - `set_msg_emoji_like({ message_id, emoji_id, set: false })`
-- Fetch group history:
-  - `get_group_msg_history({ group_id, message_seq?, count?, reverseOrder? })`
-- Fetch private history:
-  - `get_friend_msg_history({ user_id, message_seq?, count?, reverseOrder? })`
-- Fetch thread metadata:
-  - group: `get_group_info({ group_id })`
-  - private: `get_friend_list()` match first, fallback `get_stranger_info({ user_id })`
-- Typing:
-  - `set_input_status({ user_id: String(peerId), event_type: 1 })` (private only)
+- reactions: `set_msg_emoji_like`
+- group history: `get_group_msg_history`
+- private history: `get_friend_msg_history`
+- group metadata: `get_group_info`
+- private metadata: `get_friend_list` (preferred), fallback `get_stranger_info`
+- typing (private): `set_input_status`
 
-## Query Cache Layer
+## Pagination rules in this phase
 
-- Adapter now instantiates `CachedNCWebsocket` by default.
-- `createAsyncMemoFactory(...)` wraps read APIs with LRU memoization.
-- Cached methods:
-  - `get_login_info`
-  - `get_friend_list`
-  - `get_stranger_info`
-  - `get_group_info`
-  - `get_group_member_info`
-  - `get_group_member_list`
-- Cache invalidation is hooked to write APIs:
-  - `set_friend_remark`
-  - `set_group_card`
-  - `set_group_name`
-  - `set_group_leave`
-  - `set_group_kick`
-
-## Pagination + Ordering Rules
-
-- Cursor format: use `message_seq` string.
-- `limit` maps to NapCat `count`; if cursor exists, request `count = limit + 1`.
-- `direction` mapping:
+- cursor uses NapCat `message_seq` as string
+- `limit` maps to `count`
+- with cursor, request `count = limit + 1` and drop echoed cursor item
+- direction mapping:
   - `backward` -> `reverseOrder: true`
   - `forward` -> `reverseOrder: false`
-- When cursor is present, remove the echoed cursor item (`message_seq === cursor`) before returning.
 - `nextCursor`:
-  - `backward`: use current page first item's `message_seq`
-  - `forward`: use current page last item's `message_seq`
-- Current implementation relies on NapCat response ordering and does not locally re-sort messages.
+  - backward -> first item `message_seq`
+  - forward -> last item `message_seq`
 
-## Emoji Normalization Note
+## Cache layer introduced
 
-- Emoji normalization logic has been extracted to `packages/chat-adapter-qq/src/emoji.ts`.
-- A TODO is intentionally kept there: current behavior is passthrough (`string` or `EmojiValue.name`), and exact mapping to NapCat `emoji_id` still needs formal confirmation for all emoji forms.
+`CachedNCWebsocket` memoized selected read APIs with TTL and in-flight dedup:
 
-## Test Checklist
+- `get_login_info`
+- `get_friend_list`
+- `get_stranger_info`
+- `get_group_info`
+- `get_group_member_info`
+- `get_group_member_list`
 
-Automated verification:
+And invalidated related keys on selected write APIs.
 
-- `pnpm --filter chat-adapter-qq test`
-- `pnpm --filter chat-adapter-qq typecheck`
+## Tests (milestone)
 
-Covered scenarios in `packages/chat-adapter-qq/test/index.test.ts`:
+Coverage later moved from a single test file to split suites:
 
-- edit unsupported behavior.
-- reaction API mapping (`set_msg_emoji_like`).
-- `fetchMessages` group/private routing, direction, cursor pagination, and `nextCursor`.
-- thread metadata fetch for group/private.
-- private thread metadata source priority (`friend_list` first, fallback `stranger_info`).
-- typing behavior (private call / group no-op).
-- optional APIs: `fetchMessage`, `openDM`, `fetchChannelInfo`, `fetchChannelMessages`.
-- custom member query APIs: thread/channel list + single member.
+- `packages/chat-adapter-qq/test/messaging-apis.test.ts`
+- `packages/chat-adapter-qq/test/thread-member-queries.test.ts`
+- `packages/chat-adapter-qq/test/cached-napcat-client.test.ts`
 
-Covered scenarios in `packages/chat-adapter-qq/test/cached-napcat-client.test.ts`:
+## Follow-up docs
 
-- memo cache hit behavior.
-- in-flight request deduplication.
-- ttl refresh behavior.
-- explicit invalidate.
-
-Manual runtime verification:
-
-- Ran `examples/history.ts` against live NapCat to validate cursor flow (`nextCursor` progression and page fetch behavior).
-
-## Out of Scope
-
-- `listThreads` (QQ conversation model does not expose multi-thread listing in one channel)
-- `openModal`, `postEphemeral`, `scheduleMessage`
+- Message markdown parsing detail: `docs/2026-03-11-qq-adapter-message-markdown-parsing.md`
+- Heartbeat detail: `docs/2026-03-12-qq-adapter-heartbeat.md`
