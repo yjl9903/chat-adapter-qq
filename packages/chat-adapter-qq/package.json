@@ -1,6 +1,6 @@
 {
   "name": "chat-adapter-qq",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "QQ adapter for Chat SDK based on NapCat",
   "keywords": [
     "qq",
