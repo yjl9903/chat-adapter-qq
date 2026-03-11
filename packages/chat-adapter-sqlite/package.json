@@ -1,0 +1,58 @@
+{
+  "name": "chat-adapter-sqlite",
+  "version": "0.0.1",
+  "description": "SQLite state adapter for Chat SDK based on better-sqlite3",
+  "keywords": [
+    "sqlite",
+    "chat",
+    "chat-sdk",
+    "chat-adapter"
+  ],
+  "homepage": "https://github.com/yjl9903/openana#readme",
+  "bugs": {
+    "url": "https://github.com/yjl9903/openana/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yjl9903/openana.git",
+    "directory": "packages/chat-adapter-sqlite"
+  },
+  "license": "MIT",
+  "author": "XLor",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.mts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest",
+    "test:ci": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chat-adapter/shared": "^4.20.0"
+  },
+  "devDependencies": {
+    "@chat-adapter/state-pg": "^4.20.0",
+    "better-sqlite3": "^12.6.2",
+    "chat": "^4.19.0"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^12.6.2",
+    "chat": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=v20.10.0"
+  }
+}
