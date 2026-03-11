@@ -82,6 +82,18 @@ export interface QQMemberProfile {
   raw: QQMemberRaw;
 }
 
+/** QQ 连接心跳配置。 */
+export interface QQHeartbeatConfig {
+  /** 轮询间隔（毫秒，默认 30000）。 */
+  intervalMs?: number;
+
+  /** 连续失败达到阈值后触发重连（默认 2）。 */
+  failureThreshold?: number;
+
+  /** 心跳异常时是否自动重连（默认 true）。 */
+  reconnectOnFailure?: boolean;
+}
+
 /** QQ 适配器配置。 */
 export interface QQAdapterConfig {
   /** NapCat 连接配置（必填）。 */
@@ -92,6 +104,9 @@ export interface QQAdapterConfig {
 
   /** 是否启用 NapCat SDK 的 debug 输出。 */
   debug?: boolean;
+
+  /** WS 健康检查配置。 */
+  heartbeat?: QQHeartbeatConfig;
 
   /** 自定义 logger；未传时使用 Chat SDK 提供的 logger。 */
   logger?: Logger;

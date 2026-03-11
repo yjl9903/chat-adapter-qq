@@ -1,7 +1,6 @@
-import type { Receive } from 'node-napcat-ts';
+import type { Author } from 'chat';
 
 import { ValidationError } from '@chat-adapter/shared';
-import { parseMarkdown, toPlainText, type Attachment, type Author } from 'chat';
 
 import type {
   QQFriendInfo,

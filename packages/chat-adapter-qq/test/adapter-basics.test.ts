@@ -16,6 +16,26 @@ describe('createQQAdapter', () => {
       `[ValidationError: QQ NapCat config is required. Pass { napcat: NCWebsocketOptions } to createQQAdapter(config).]`
     );
   });
+
+  it('throws when heartbeat config is invalid', () => {
+    expect(() =>
+      createQQAdapter({
+        napcat: { baseUrl: 'ws://localhost:3001' },
+        heartbeat: { intervalMs: 0 }
+      })
+    ).toThrowErrorMatchingInlineSnapshot(
+      `[ValidationError: QQ heartbeat intervalMs must be a positive integer.]`
+    );
+
+    expect(() =>
+      createQQAdapter({
+        napcat: { baseUrl: 'ws://localhost:3001' },
+        heartbeat: { failureThreshold: -1 }
+      })
+    ).toThrowErrorMatchingInlineSnapshot(
+      `[ValidationError: QQ heartbeat failureThreshold must be a positive integer.]`
+    );
+  });
 });
 
 describe('QQAdapter thread ID', () => {

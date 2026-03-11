@@ -3,3 +3,5 @@ packages:
 
 onlyBuiltDependencies:
   - esbuild
+patchedDependencies:
+  node-napcat-ts: patches/node-napcat-ts.patch

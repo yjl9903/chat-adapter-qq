@@ -1,0 +1,105 @@
+diff --git a/dist/NCWebsocketBase.js b/dist/NCWebsocketBase.js
+index ebc709d7aef23d1100aaab61044b1f9ad663dc4d..0e52ad3c73791d95cea434f1d32dae0c0738883d 100644
+--- a/dist/NCWebsocketBase.js
++++ b/dist/NCWebsocketBase.js
+@@ -11,6 +11,9 @@ export class NCWebsocketBase {
+     #socket;
+     #eventBus;
+     #echoMap;
++    #connectingPromise;
++    #reconnectTimer;
++    #disconnected;
+     constructor(NCWebsocketOptions, debug = false) {
+         this.#accessToken = NCWebsocketOptions.accessToken ?? '';
+         this.#throwPromise = NCWebsocketOptions.throwPromise ?? false;
+@@ -32,16 +35,26 @@ export class NCWebsocketBase {
+         this.#debug = debug;
+         this.#eventBus = new NCEventBus(this);
+         this.#echoMap = new Map();
++        this.#disconnected = false;
+     }
+     // ==================WebSocket操作=============================
+     /**
+      * await connect() 等待 ws 连接
+      */
+     async connect() {
+-        return new Promise((resolve, reject) => {
++        if (this.#socket?.readyState === WebSocket.OPEN) return;
++        if (this.#connectingPromise) return this.#connectingPromise;
++        this.#disconnected = false;
++        const connectingPromise = new Promise((resolve, reject) => {
++            const clearConnectingPromise = () => {
++                if (this.#connectingPromise === connectingPromise) {
++                    this.#connectingPromise = undefined;
++                }
++            };
+             this.#eventBus.emit('socket.connecting', { reconnection: this.#reconnection });
+             const socket = new WebSocket(`${this.#baseUrl}?access_token=${this.#accessToken}`);
+             socket.onopen = () => {
++                clearConnectingPromise();
+                 this.#eventBus.emit('socket.open', { reconnection: this.#reconnection });
+                 this.#reconnection.nowAttempts = 1;
+                 resolve();
+@@ -52,10 +65,20 @@ export class NCWebsocketBase {
+                     reason: event.reason,
+                     reconnection: this.#reconnection,
+                 });
+-                if (this.#reconnection.enable &&
++                if (!this.#disconnected &&
++                    this.#reconnection.enable &&
+                     this.#reconnection.nowAttempts < this.#reconnection.attempts) {
+                     this.#reconnection.nowAttempts++;
+-                    setTimeout(async () => {
++                    if (this.#reconnectTimer) {
++                        clearTimeout(this.#reconnectTimer);
++                    }
++                    const reconnectTimer = setTimeout(async () => {
++                        if (this.#reconnectTimer === reconnectTimer) {
++                            this.#reconnectTimer = undefined;
++                        }
++                        if (this.#disconnected) {
++                            return;
++                        }
+                         try {
+                             await this.reconnect();
+                         }
+@@ -63,17 +86,21 @@ export class NCWebsocketBase {
+                             reject(error);
+                         }
+                     }, this.#reconnection.delay);
++                    this.#reconnectTimer = reconnectTimer;
+                 }
++                clearConnectingPromise();
+             };
+             socket.onmessage = (event) => this.#message(event.data);
+             socket.onerror = (event) => {
++                clearConnectingPromise();
+                 this.#eventBus.emit('socket.error', {
+                     reconnection: this.#reconnection,
+                     error_type: 'connect_error',
+                     errors: event?.error?.errors ?? [event?.error ?? null],
+                 });
+                 if (this.#throwPromise) {
+-                    if (this.#reconnection.enable &&
++                    if (!this.#disconnected &&
++                        this.#reconnection.enable &&
+                         this.#reconnection.nowAttempts < this.#reconnection.attempts) {
+                         // 重连未到最后一次，等待继续重连，不抛出错误
+                         return;
+@@ -87,8 +114,16 @@ export class NCWebsocketBase {
+             };
+             this.#socket = socket;
+         });
++        this.#connectingPromise = connectingPromise;
++        return this.#connectingPromise;
+     }
+     disconnect() {
++        this.#disconnected = true;
++        this.#connectingPromise = undefined;
++        if (this.#reconnectTimer) {
++            clearTimeout(this.#reconnectTimer);
++            this.#reconnectTimer = undefined;
++        }
+         if (this.#socket) {
+             this.#socket.close(1000);
+             this.#socket = undefined;

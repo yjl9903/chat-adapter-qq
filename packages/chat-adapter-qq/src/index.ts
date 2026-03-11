@@ -10,6 +10,7 @@ export type {
   QQFriendInfo,
   QQGroupMemberInfo,
   QQGroupMessage,
+  QQHeartbeatConfig,
   QQLoginInfo,
   QQMemberProfile,
   QQMemberRaw,

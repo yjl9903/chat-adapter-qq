@@ -14,8 +14,17 @@ type HistoryParams = {
   reverseOrder?: boolean;
 };
 
+type MockStatusResult = {
+  online: boolean;
+  good: boolean;
+  stat: Record<string, unknown>;
+};
+
 export class MockNapcatClient {
   connectCalls = 0;
+  disconnectCalls = 0;
+  reconnectCalls = 0;
+  getStatusCalls = 0;
   deletedMessages: number[] = [];
   sentGroupMessages: Array<{ group_id: number; message: SendMessageSegment[] }> = [];
   sentPrivateMessages: Array<{ user_id: number; message: SendMessageSegment[] }> = [];
@@ -76,8 +85,19 @@ export class MockNapcatClient {
       qqLevel: number;
     }
   >();
+  private statusQueue: Array<MockStatusResult | Error> = [];
 
   async connect(): Promise<void> {
+    this.connectCalls += 1;
+  }
+
+  disconnect(): void {
+    this.disconnectCalls += 1;
+  }
+
+  async reconnect(): Promise<void> {
+    this.reconnectCalls += 1;
+    this.disconnectCalls += 1;
     this.connectCalls += 1;
   }
 
@@ -108,6 +128,17 @@ export class MockNapcatClient {
       user_id: 10001,
       nickname: 'qq-bot'
     };
+  }
+
+  async get_status(): Promise<MockStatusResult> {
+    this.getStatusCalls += 1;
+
+    const next = this.statusQueue.shift();
+    if (next instanceof Error) {
+      throw next;
+    }
+
+    return next ?? { online: true, good: true, stat: {} };
   }
 
   async send_group_msg(params: {
@@ -367,6 +398,10 @@ export class MockNapcatClient {
     }>
   ): void {
     this.friendList = list;
+  }
+
+  setStatusQueue(statuses: Array<MockStatusResult | Error>): void {
+    this.statusQueue = [...statuses];
   }
 
   private paginateHistory(messages: QQRawMessage[], params: HistoryParams): QQRawMessage[] {

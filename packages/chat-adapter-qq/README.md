@@ -38,6 +38,12 @@ const bot = new Chat({
           attempts: 10,
           delay: 5000
         }
+      },
+      // ↓ 心跳轮询 (可选，默认启用)
+      heartbeat: {
+        intervalMs: 30_000,
+        failureThreshold: 2,
+        reconnectOnFailure: true
       }
     })
   },

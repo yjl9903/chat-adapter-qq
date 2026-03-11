@@ -33,6 +33,7 @@ import type {
 
 import { QQFormatConverter, type QQParsedIncomingMessage } from './converter/index.js';
 import { normalizeQQEmojiId } from './emoji.js';
+import { QQNapcatConnectionHeartbeat } from './heartbeat.js';
 import { CachedNCWebsocket } from './napcat/cached-client.js';
 import {
   isMention,
@@ -83,6 +84,8 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
   private initializing?: Promise<void>;
 
+  private heartbeat?: QQNapcatConnectionHeartbeat;
+
   /** 创建 QQ 适配器实例（不发起连接）。 */
   public constructor(config: QQAdapterConfig) {
     this.config = config;
@@ -115,8 +118,12 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
   }
 
   public async shutdown(): Promise<void> {
+    this.stopHeartbeat();
+
+    if (!this.client) return;
+
     try {
-      this.client?.disconnect();
+      this.client.disconnect();
     } catch {}
   }
 
@@ -144,6 +151,8 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     this.selfId = String(login.user_id);
     this.botUserId = login.nickname;
     this.userName = login.nickname;
+
+    this.startHeartbeat();
   }
 
   /**
@@ -631,6 +640,54 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     const client = this.requireClient();
     const friends = await client.get_friend_list();
     return friends.find((item) => item.user_id === userId);
+  }
+
+  /** 启动心跳轮询。 */
+  private startHeartbeat(): void {
+    if (!this.heartbeat) {
+      this.heartbeat = new QQNapcatConnectionHeartbeat({
+        logger: this.logger,
+        intervalMs: this.config.heartbeat?.intervalMs,
+        failureThreshold: this.config.heartbeat?.failureThreshold,
+        reconnectOnFailure: this.config.heartbeat?.reconnectOnFailure,
+        getStatus: async () => {
+          const client = this.requireClient();
+          return client.get_status();
+        },
+        reconnect: async () => {
+          await this.reconnectClient();
+        }
+      });
+    }
+
+    this.heartbeat.start();
+  }
+
+  /** 停止心跳轮询。 */
+  private stopHeartbeat(): void {
+    this.heartbeat?.stop();
+  }
+
+  /** 重连后刷新登录态，确保 selfId/userName 与当前会话一致。 */
+  private async reconnectClient(): Promise<void> {
+    const client = this.requireClient();
+    const reconnectable = client as QQNapcatClient & {
+      reconnect?: () => Promise<void>;
+    };
+
+    if (typeof reconnectable.reconnect === 'function') {
+      await reconnectable.reconnect();
+    } else {
+      try {
+        client.disconnect();
+      } catch {}
+      await client.connect();
+    }
+
+    const login = await client.get_login_info();
+    this.selfId = String(login.user_id);
+    this.botUserId = login.nickname;
+    this.userName = login.nickname;
   }
 
   private bindListeners(): void {

@@ -4,6 +4,9 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts'
   },
+  deps: {
+    onlyAllowBundle: 'node-napcat-ts'
+  },
   format: ['esm', 'cjs'],
   dts: true,
   clean: true,

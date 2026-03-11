@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  node-napcat-ts:
+    hash: bd08fb7db8bf2dde87babbc120e3157023518c4005d762a242e46e3ce5a0a79e
+    path: patches/node-napcat-ts.patch
+
 importers:
 
   .:
@@ -41,12 +46,18 @@ importers:
       '@chat-adapter/shared':
         specifier: ^4.18.0
         version: 4.19.0
+      isomorphic-ws:
+        specifier: ^5.0.0
+        version: 5.0.0(ws@8.19.0)
       lru-cache:
         specifier: ^11.2.6
         version: 11.2.6
-      node-napcat-ts:
-        specifier: ^0.4.21
-        version: 0.4.21
+      nanoid:
+        specifier: ^5.1.5
+        version: 5.1.6
+      ws:
+        specifier: ^8.19.0
+        version: 8.19.0
     devDependencies:
       '@chat-adapter/state-memory':
         specifier: ^4.19.0
@@ -54,6 +65,9 @@ importers:
       chat:
         specifier: ^4.19.0
         version: 4.19.0
+      node-napcat-ts:
+        specifier: 0.4.21
+        version: 0.4.21(patch_hash=bd08fb7db8bf2dde87babbc120e3157023518c4005d762a242e46e3ce5a0a79e)
 
 packages:
 
@@ -2112,7 +2126,7 @@ snapshots:
 
   node-fetch-native@1.6.7: {}
 
-  node-napcat-ts@0.4.21:
+  node-napcat-ts@0.4.21(patch_hash=bd08fb7db8bf2dde87babbc120e3157023518c4005d762a242e46e3ce5a0a79e):
     dependencies:
       isomorphic-ws: 5.0.0(ws@8.19.0)
       nanoid: 5.1.6
