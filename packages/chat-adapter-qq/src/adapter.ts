@@ -339,7 +339,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
     const ordered = [...candidates];
 
-    const messages = ordered.map((raw) => this.parseMessage(raw));
+    const messages = await Promise.all(ordered.map((raw) => this.parseThreadMessage(raw)));
     if (messages.length === 0) {
       return { messages };
     }
@@ -508,7 +508,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
       return null;
     }
 
-    return this.parseMessage(raw);
+    return this.parseThreadMessage(raw);
   }
 
   /** 打开与指定用户的私聊会话。 */
@@ -563,6 +563,28 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     });
   }
 
+  /** 将 NapCat 原始消息转换为 Chat SDK Message，并按线程成员信息修正 author。 */
+  public async parseThreadMessage(raw: QQRawMessage): Promise<Message<QQRawMessage>> {
+    const message = this.parseMessage(raw);
+    const threadId = message.threadId;
+    const userId = String(raw.user_id);
+
+    const member = await this.fetchThreadMember(threadId, userId).catch(() => null);
+    if (!member) {
+      return message;
+    }
+
+    message.author = {
+      userId: member.userId,
+      userName: member.userName,
+      fullName: member.cardName || member.userName || member.userId,
+      isBot: member.isBot,
+      isMe: member.isMe
+    };
+
+    return message;
+  }
+
   private async fetchPrivateMembers(peerId: number): Promise<QQMemberProfile[]> {
     const client = this.requireClient();
     const login = await client.get_login_info();
@@ -604,32 +626,40 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     this.listenersBound = true;
   }
 
-  private readonly onGroupMessage = (raw: QQGroupMessage): void => {
+  private readonly onGroupMessage = async (raw: QQGroupMessage) => {
     this.dispatchIncomingMessage(raw);
   };
 
-  private readonly onPrivateMessage = (raw: QQPrivateMessage): void => {
+  private readonly onPrivateMessage = async (raw: QQPrivateMessage) => {
     this.dispatchIncomingMessage(raw);
   };
 
-  private readonly onEmojiLikeMessage = (raw: QQEmojiLikeMessage): void => {
+  private readonly onEmojiLikeMessage = async (raw: QQEmojiLikeMessage) => {
     this.logger.debug('receive emoji like message', raw);
 
-    const isMe = this.selfId !== undefined && String(raw.user_id) === this.selfId;
+    const threadId = this.encodeThreadId({ chatType: 'group', peerId: String(raw.group_id) });
+    const messageId = String(raw.message_id);
+    const userId = String(raw.user_id);
+    const member = await this.fetchThreadMember(threadId, userId);
+
+    const isMe = member
+      ? member.isMe
+      : this.selfId !== undefined && String(raw.user_id) === this.selfId;
+    const isBot = member ? member.isBot : isMe;
 
     for (const like of raw.likes) {
       this.chat?.processReaction({
         adapter: this,
-        threadId: this.encodeThreadId({ chatType: 'group', peerId: String(raw.group_id) }),
-        messageId: String(raw.message_id),
+        threadId,
+        messageId,
         emoji: emoji.custom(like.emoji_id),
         rawEmoji: like.emoji_id,
         added: (raw as any).is_add ?? true,
         user: {
-          userId: String(raw.user_id),
-          userName: String(raw.user_id),
-          fullName: String(raw.user_id),
-          isBot: isMe,
+          userId: member?.userId || userId,
+          userName: member?.userName || userId,
+          fullName: member?.cardName || member?.userName || userId,
+          isBot,
           isMe
         },
         raw
@@ -656,8 +686,9 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     const mention = isMention(raw, this.selfId);
 
     this.chat.processMessage(this, threadId, async () => {
-      const message = this.parseMessage(raw);
+      const message = await this.parseThreadMessage(raw);
       message.isMention = mention;
+
       return message;
     });
   }
