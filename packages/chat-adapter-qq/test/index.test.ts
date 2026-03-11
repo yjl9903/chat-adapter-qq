@@ -6,6 +6,8 @@ import { createQQAdapter, type QQGroupMessage, type QQPrivateMessage } from '../
 
 import {
   attachMockClient,
+  createFriendInfo,
+  createGroupMemberInfo,
   createGroupMessage,
   createPrivateMessage,
   MockNapcatClient
@@ -343,11 +345,18 @@ describe('QQ adapter methods', () => {
       user_id: 20002,
       nickname: 'alice',
       nick: 'alice',
-      remark: 'teammate',
+      remark: 'stranger-remark',
       sex: 'female',
       qid: 'alice_qid',
       qqLevel: 12
     });
+    ctx.client.setFriendList([
+      createFriendInfo({
+        userId: 20002,
+        nickname: 'alice-friend',
+        remark: 'friend-remark'
+      })
+    ]);
 
     const groupThread = await ctx.adapter.fetchThread('qq:group:30003');
     expect(groupThread.channelName).toBe('My Group');
@@ -359,13 +368,148 @@ describe('QQ adapter methods', () => {
     });
 
     const privateThread = await ctx.adapter.fetchThread('qq:private:20002');
-    expect(privateThread.channelName).toBe('teammate');
+    expect(privateThread.channelName).toBe('friend-remark');
     expect(privateThread.isDM).toBe(true);
     expect(privateThread.metadata.private).toMatchObject({
       user_id: 20002,
-      nickname: 'alice',
-      remark: 'teammate'
+      nickname: 'alice-friend',
+      remark: 'friend-remark'
     });
+    expect(privateThread.metadata.source).toBe('friend_list');
+    expect(ctx.client.getStrangerInfoCalls).toEqual([]);
+  });
+
+  it('fetches group members and single member with unified profile fields', async () => {
+    const ctx = await createQQTestContext();
+    ctx.client.setGroupMembers(30003, [
+      createGroupMemberInfo({
+        groupId: 30003,
+        userId: 10001,
+        nickname: 'qq-bot',
+        card: 'bot-card',
+        isRobot: true,
+        role: 'owner'
+      }),
+      createGroupMemberInfo({
+        groupId: 30003,
+        userId: 20002,
+        nickname: 'alice',
+        card: 'alice-card',
+        isRobot: false
+      })
+    ]);
+
+    const members = await ctx.adapter.fetchThreadMembers('qq:group:30003');
+    expect(members).toHaveLength(2);
+
+    const selfMember = members.find((item) => item.userId === '10001');
+    expect(selfMember).toMatchObject({
+      userId: '10001',
+      userName: 'qq-bot',
+      cardName: 'bot-card',
+      isBot: true,
+      isMe: true
+    });
+    expect(selfMember?.raw).toMatchObject({
+      user_id: 10001,
+      role: 'owner'
+    });
+
+    const alice = await ctx.adapter.fetchThreadMember('qq:group:30003', '20002');
+    expect(alice).toMatchObject({
+      userId: '20002',
+      userName: 'alice',
+      cardName: 'alice-card',
+      isBot: false,
+      isMe: false
+    });
+
+    const channelMembers = await ctx.adapter.fetchChannelMembers('qq:group:30003');
+    expect(channelMembers).toHaveLength(2);
+
+    const channelSelf = await ctx.adapter.fetchChannelMember('qq:group:30003', '10001');
+    expect(channelSelf?.isMe).toBe(true);
+    expect(ctx.client.getGroupMemberListCalls.length).toBeGreaterThanOrEqual(2);
+    expect(ctx.client.getGroupMemberInfoCalls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('fetches private members from friend list first', async () => {
+    const ctx = await createQQTestContext();
+    ctx.client.setFriendList([
+      createFriendInfo({
+        userId: 20002,
+        nickname: 'alice-friend',
+        remark: 'friend-remark'
+      })
+    ]);
+    ctx.client.setStrangerInfo(20002, {
+      user_id: 20002,
+      nickname: 'alice-stranger',
+      nick: 'alice-stranger',
+      remark: 'stranger-remark',
+      sex: 'female',
+      qid: 'alice_qid',
+      qqLevel: 12
+    });
+
+    const members = await ctx.adapter.fetchThreadMembers('qq:private:20002');
+    expect(members).toHaveLength(2);
+
+    const selfMember = members.find((item) => item.userId === '10001');
+    expect(selfMember).toMatchObject({
+      userId: '10001',
+      userName: 'qq-bot',
+      cardName: '',
+      isBot: true,
+      isMe: true
+    });
+
+    const peerMember = members.find((item) => item.userId === '20002');
+    expect(peerMember).toMatchObject({
+      userId: '20002',
+      userName: 'alice-friend',
+      cardName: 'friend-remark',
+      isBot: false,
+      isMe: false
+    });
+    expect(peerMember?.raw).toMatchObject({
+      user_id: 20002,
+      remark: 'friend-remark'
+    });
+
+    const selfById = await ctx.adapter.fetchThreadMember('qq:private:20002', '10001');
+    expect(selfById?.isMe).toBe(true);
+
+    const peerByChannel = await ctx.adapter.fetchChannelMember('qq:private:20002', '20002');
+    expect(peerByChannel?.cardName).toBe('friend-remark');
+
+    const unknown = await ctx.adapter.fetchThreadMember('qq:private:20002', '99999');
+    expect(unknown).toBeNull();
+    expect(ctx.client.getFriendListCalls).toBeGreaterThanOrEqual(1);
+    expect(ctx.client.getStrangerInfoCalls).toEqual([]);
+  });
+
+  it('falls back to stranger info when peer is not in friend list', async () => {
+    const ctx = await createQQTestContext();
+    ctx.client.setFriendList([]);
+    ctx.client.setStrangerInfo(20002, {
+      user_id: 20002,
+      nickname: 'alice',
+      nick: 'alice',
+      remark: 'stranger-remark',
+      sex: 'female',
+      qid: 'alice_qid',
+      qqLevel: 12
+    });
+
+    const members = await ctx.adapter.fetchThreadMembers('qq:private:20002');
+    const peerMember = members.find((item) => item.userId === '20002');
+    expect(peerMember).toMatchObject({
+      userName: 'alice',
+      cardName: 'stranger-remark'
+    });
+    expect(ctx.client.getFriendListCalls).toBe(1);
+    expect(ctx.client.getStrangerInfoCalls).toEqual([20002]);
   });
 
   it('supports typing for private threads and no-op for group threads', async () => {

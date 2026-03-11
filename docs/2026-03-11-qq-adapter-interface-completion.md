@@ -7,6 +7,7 @@
 - NapCat SDK API: `node_modules/node-napcat-ts/dist/NCWebsocketApi.d.ts`
 - NapCat request/response types: `node_modules/node-napcat-ts/dist/Interfaces.d.ts`
 - Implementation: `packages/chat-adapter-qq/src/adapter.ts`
+- Cached client: `packages/chat-adapter-qq/src/napcat/cached-client.ts`
 - Runtime example: `examples/history.ts`
 
 ## Status
@@ -21,6 +22,8 @@ Implemented in this round:
 4. `fetchThread`: implemented with API-backed full metadata.
 5. `startTyping`: implemented via input-status API.
 6. Add useful optional Chat APIs with clear behavior.
+7. QQ custom member query APIs for thread/channel.
+8. Query cache layer with memoized NapCat read APIs.
 
 ## Adapter Coverage (Implemented)
 
@@ -32,12 +35,19 @@ Required methods:
 - `fetchThread`: call platform APIs instead of returning decode-only metadata.
 - `startTyping`: private chat calls API; group chat no-op with debug log.
 
-Optional methods to add:
+Optional methods added:
 
 - `fetchMessage(threadId, messageId)` -> `get_msg` + thread consistency check.
 - `openDM(userId)` -> return encoded `qq:private:{userId}`.
 - `fetchChannelInfo(channelId)` and `fetchChannelMessages(channelId, options)` -> delegate to thread-level methods (QQ uses conversation-as-thread model).
 - Reaction ingress support: listens `notice.group_msg_emoji_like` and emits Chat SDK reaction events via `chat.processReaction(...)`.
+
+QQ custom extension methods added:
+
+- `fetchThreadMembers(threadId)`
+- `fetchThreadMember(threadId, userId)`
+- `fetchChannelMembers(channelId)`
+- `fetchChannelMember(channelId, userId)`
 
 ## Chat-to-NapCat Mapping
 
@@ -51,9 +61,27 @@ Optional methods to add:
   - `get_friend_msg_history({ user_id, message_seq?, count?, reverseOrder? })`
 - Fetch thread metadata:
   - group: `get_group_info({ group_id })`
-  - private: `get_stranger_info({ user_id })`
+  - private: `get_friend_list()` match first, fallback `get_stranger_info({ user_id })`
 - Typing:
   - `set_input_status({ user_id: String(peerId), event_type: 1 })` (private only)
+
+## Query Cache Layer
+
+- Adapter now instantiates `CachedNCWebsocket` by default.
+- `createAsyncMemoFactory(...)` wraps read APIs with LRU memoization.
+- Cached methods:
+  - `get_login_info`
+  - `get_friend_list`
+  - `get_stranger_info`
+  - `get_group_info`
+  - `get_group_member_info`
+  - `get_group_member_list`
+- Cache invalidation is hooked to write APIs:
+  - `set_friend_remark`
+  - `set_group_card`
+  - `set_group_name`
+  - `set_group_leave`
+  - `set_group_kick`
 
 ## Pagination + Ordering Rules
 
@@ -86,8 +114,17 @@ Covered scenarios in `packages/chat-adapter-qq/test/index.test.ts`:
 - reaction API mapping (`set_msg_emoji_like`).
 - `fetchMessages` group/private routing, direction, cursor pagination, and `nextCursor`.
 - thread metadata fetch for group/private.
+- private thread metadata source priority (`friend_list` first, fallback `stranger_info`).
 - typing behavior (private call / group no-op).
 - optional APIs: `fetchMessage`, `openDM`, `fetchChannelInfo`, `fetchChannelMessages`.
+- custom member query APIs: thread/channel list + single member.
+
+Covered scenarios in `packages/chat-adapter-qq/test/cached-napcat-client.test.ts`:
+
+- memo cache hit behavior.
+- in-flight request deduplication.
+- ttl refresh behavior.
+- explicit invalidate.
 
 Manual runtime verification:
 

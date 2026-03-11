@@ -3,7 +3,15 @@ import type { Receive } from 'node-napcat-ts';
 import { ValidationError } from '@chat-adapter/shared';
 import { parseMarkdown, toPlainText, type Attachment, type Author } from 'chat';
 
-import type { QQRawMessage, QQThreadId } from './types.js';
+import type {
+  QQFriendInfo,
+  QQGroupMemberInfo,
+  QQLoginInfo,
+  QQMemberProfile,
+  QQRawMessage,
+  QQStrangerInfo,
+  QQThreadId
+} from './types.js';
 
 /** 将字符串 ID 转为正整数，失败时抛出 ValidationError。 */
 export function toNumberId(value: string, fieldName: string): number {
@@ -65,5 +73,70 @@ export function toAuthor(raw: QQRawMessage, isMe: boolean): Author {
     fullName: userName,
     isBot: isMe,
     isMe
+  };
+}
+
+/** 将群成员信息转换为统一成员结构。 */
+export function toGroupMemberProfile(member: QQGroupMemberInfo, selfId?: string): QQMemberProfile {
+  const userId = String(member.user_id);
+  const isMe = selfId !== undefined && userId === selfId;
+
+  return {
+    userId,
+    userName: member.nickname || userId,
+    cardName: member.card || '',
+    isBot: member.is_robot,
+    isMe,
+    raw: member
+  };
+}
+
+/** 将登录信息转换为“自己”的统一成员结构。 */
+export function toSelfMemberProfile(login: QQLoginInfo): QQMemberProfile {
+  const userId = String(login.user_id);
+
+  return {
+    userId,
+    userName: login.nickname || userId,
+    cardName: '',
+    isBot: true,
+    isMe: true,
+    raw: login
+  };
+}
+
+/** 将私聊对端资料转换为统一成员结构。 */
+export function toPrivatePeerMemberProfile(
+  peer: QQStrangerInfo,
+  selfUserId: string
+): QQMemberProfile {
+  const userId = String(peer.user_id);
+  const isMe = userId === selfUserId;
+
+  return {
+    userId,
+    userName: peer.nickname || peer.nick || userId,
+    cardName: peer.remark || '',
+    isBot: isMe,
+    isMe,
+    raw: peer
+  };
+}
+
+/** 将私聊好友资料（好友列表条目）转换为统一成员结构。 */
+export function toPrivateFriendMemberProfile(
+  friend: QQFriendInfo,
+  selfUserId: string
+): QQMemberProfile {
+  const userId = String(friend.user_id);
+  const isMe = userId === selfUserId;
+
+  return {
+    userId,
+    userName: friend.nickname || userId,
+    cardName: friend.remark || '',
+    isBot: isMe,
+    isMe,
+    raw: friend
   };
 }

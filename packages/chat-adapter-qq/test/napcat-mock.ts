@@ -1,6 +1,7 @@
 import type { SendMessageSegment } from 'node-napcat-ts';
 import {
   createQQAdapter,
+  type QQGroupMemberInfo,
   type QQNapcatClient,
   type QQGroupMessage,
   type QQPrivateMessage,
@@ -24,6 +25,9 @@ export class MockNapcatClient {
   inputStatusCalls: Array<{ user_id: string; event_type: number }> = [];
   getMsgCalls: number[] = [];
   getGroupInfoCalls: number[] = [];
+  getGroupMemberListCalls: number[] = [];
+  getGroupMemberInfoCalls: Array<{ group_id: number; user_id: number }> = [];
+  getFriendListCalls = 0;
   getStrangerInfoCalls: number[] = [];
 
   private nextMessageId = 1000;
@@ -43,6 +47,21 @@ export class MockNapcatClient {
       max_member_count: number;
     }
   >();
+  private readonly groupMembersById = new Map<number, QQGroupMemberInfo[]>();
+  private friendList: Array<{
+    birthday_year: number;
+    birthday_month: number;
+    birthday_day: number;
+    user_id: number;
+    age: number;
+    phone_num: string;
+    email: string;
+    category_id: number;
+    nickname: string;
+    remark: string;
+    sex: 'male' | 'female' | 'unknown';
+    level: number;
+  }> = [];
   private readonly strangerInfoById = new Map<
     number,
     {
@@ -186,6 +205,45 @@ export class MockNapcatClient {
     );
   }
 
+  async get_group_member_info(params: {
+    group_id: number;
+    user_id: number;
+  }): Promise<QQGroupMemberInfo> {
+    this.getGroupMemberInfoCalls.push(params);
+    const members = this.groupMembersById.get(params.group_id) ?? [];
+    const found = members.find((item) => item.user_id === params.user_id);
+    if (!found) {
+      throw new Error(`Group member not found: group=${params.group_id} user=${params.user_id}`);
+    }
+
+    return found;
+  }
+
+  async get_group_member_list(params: { group_id: number }): Promise<QQGroupMemberInfo[]> {
+    this.getGroupMemberListCalls.push(params.group_id);
+    return this.groupMembersById.get(params.group_id) ?? [];
+  }
+
+  async get_friend_list(): Promise<
+    Array<{
+      birthday_year: number;
+      birthday_month: number;
+      birthday_day: number;
+      user_id: number;
+      age: number;
+      phone_num: string;
+      email: string;
+      category_id: number;
+      nickname: string;
+      remark: string;
+      sex: 'male' | 'female' | 'unknown';
+      level: number;
+    }>
+  > {
+    this.getFriendListCalls += 1;
+    return this.friendList;
+  }
+
   async get_stranger_info(params: { user_id: number }): Promise<{
     user_id: number;
     nickname: string;
@@ -265,6 +323,29 @@ export class MockNapcatClient {
     }
   ): void {
     this.strangerInfoById.set(userId, info);
+  }
+
+  setGroupMembers(groupId: number, members: QQGroupMemberInfo[]): void {
+    this.groupMembersById.set(groupId, members);
+  }
+
+  setFriendList(
+    list: Array<{
+      birthday_year: number;
+      birthday_month: number;
+      birthday_day: number;
+      user_id: number;
+      age: number;
+      phone_num: string;
+      email: string;
+      category_id: number;
+      nickname: string;
+      remark: string;
+      sex: 'male' | 'female' | 'unknown';
+      level: number;
+    }>
+  ): void {
+    this.friendList = list;
   }
 
   private paginateHistory(messages: QQRawMessage[], params: HistoryParams): QQRawMessage[] {
@@ -356,5 +437,58 @@ export function createPrivateMessage(
     quick_action: async () => null,
     message_format: 'array',
     message
+  };
+}
+
+export function createGroupMemberInfo(options?: {
+  groupId?: number;
+  userId?: number;
+  nickname?: string;
+  card?: string;
+  isRobot?: boolean;
+  role?: 'owner' | 'admin' | 'member';
+}): QQGroupMemberInfo {
+  return {
+    group_id: options?.groupId ?? 30003,
+    user_id: options?.userId ?? 20002,
+    nickname: options?.nickname ?? 'alice',
+    card: options?.card ?? '',
+    sex: 'unknown',
+    age: 0,
+    area: '',
+    level: '0',
+    qq_level: 0,
+    join_time: 0,
+    last_sent_time: 0,
+    title_expire_time: 0,
+    unfriendly: false,
+    card_changeable: true,
+    is_robot: options?.isRobot ?? false,
+    shut_up_timestamp: 0,
+    role: options?.role ?? 'member',
+    title: ''
+  };
+}
+
+export function createFriendInfo(options?: {
+  userId?: number;
+  nickname?: string;
+  remark?: string;
+  sex?: 'male' | 'female' | 'unknown';
+  level?: number;
+}) {
+  return {
+    birthday_year: 0,
+    birthday_month: 0,
+    birthday_day: 0,
+    user_id: options?.userId ?? 20002,
+    age: 0,
+    phone_num: '',
+    email: '',
+    category_id: 0,
+    nickname: options?.nickname ?? 'alice',
+    remark: options?.remark ?? '',
+    sex: options?.sex ?? 'unknown',
+    level: options?.level ?? 0
   };
 }

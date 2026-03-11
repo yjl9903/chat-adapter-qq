@@ -31,35 +31,12 @@ const bot = new Chat({
 await bot.initialize();
 
 const adapter = bot.getAdapter('qq');
-const resp1 = await adapter.fetchMessages(process.env.NAPCAT_PRIVATE_THREAD_ID!, { limit: 5 });
 
-console.log('nextCursor', resp1.nextCursor, resp1.messages.length);
-await fs.promises.writeFile(
-  '.profile/history.json',
-  JSON.stringify(
-    resp1.messages.map((m) => m.raw),
-    null,
-    2
-  ),
-  'utf-8'
-);
+const privateMembers = await adapter.fetchThreadMembers(process.env.NAPCAT_PRIVATE_THREAD_ID!);
+console.log('private', privateMembers);
 
-if (resp1.nextCursor) {
-  const resp2 = await adapter.fetchMessages(process.env.NAPCAT_PRIVATE_THREAD_ID!, {
-    limit: 5,
-    cursor: resp1.nextCursor
-  });
-  console.log('nextCursor', resp2.nextCursor, resp2.messages.length);
-  await fs.promises.writeFile(
-    '.profile/history.json',
-    JSON.stringify(
-      [...resp2.messages, ...resp1.messages].map((m) => m.raw),
-      null,
-      2
-    ),
-    'utf-8'
-  );
-}
+const groupMembers = await adapter.fetchThreadMembers(process.env.NAPCAT_GROUP_THREAD_ID!);
+console.log('group', groupMembers);
 
 await bot.shutdown();
 

@@ -16,12 +16,14 @@ import {
   emoji
 } from 'chat';
 import { ValidationError } from '@chat-adapter/shared';
-import { type SendMessageSegment, NCWebsocket, Structs } from 'node-napcat-ts';
+import { type SendMessageSegment, Structs } from 'node-napcat-ts';
 
 import type {
   QQAdapterConfig,
   QQEmojiLikeMessage,
+  QQFriendInfo,
   QQGroupMessage,
+  QQMemberProfile,
   QQNapcatClient,
   QQPrivateMessage,
   QQRawMessage,
@@ -30,7 +32,18 @@ import type {
 
 import { QQFormatConverter, extractText, toAttachments } from './format-converter.js';
 import { normalizeQQEmojiId } from './emoji.js';
-import { isMention, isSelfMessage, toAuthor, toNumberId, toThreadId } from './utils.js';
+import { CachedNCWebsocket } from './napcat/cached-client.js';
+import {
+  isMention,
+  isSelfMessage,
+  toAuthor,
+  toPrivateFriendMemberProfile,
+  toGroupMemberProfile,
+  toNumberId,
+  toPrivatePeerMemberProfile,
+  toSelfMemberProfile,
+  toThreadId
+} from './utils.js';
 
 /**
  * Chat SDK QQ 平台适配器（基于 NapCat WebSocket）。
@@ -105,7 +118,11 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     this.logger = this.config.logger ?? chat.getLogger(this.name);
 
     if (!this.client) {
-      this.client = new NCWebsocket(this.config.napcat, this.config.debug ?? false);
+      this.client = new CachedNCWebsocket(
+        this.config.napcat,
+        this.config.debug ?? false,
+        this.config.cache
+      );
       this.converter = new QQFormatConverter(this.client);
     }
 
@@ -343,12 +360,62 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     };
   }
 
+  /** 查询 thread 成员列表（QQ 自定义能力）。 */
+  public async fetchThreadMembers(threadId: string): Promise<QQMemberProfile[]> {
+    const client = this.requireClient();
+    const parsed = this.decodeThreadId(threadId);
+    const peerId = toNumberId(parsed.peerId, 'peerId');
+
+    if (parsed.chatType === 'group') {
+      const members = await client.get_group_member_list({ group_id: peerId });
+      return members.map((member) => toGroupMemberProfile(member, this.selfId));
+    }
+
+    return this.fetchPrivateMembers(peerId);
+  }
+
+  /** 查询 thread 单个成员（QQ 自定义能力）。 */
+  public async fetchThreadMember(
+    threadId: string,
+    userId: string
+  ): Promise<QQMemberProfile | null> {
+    const client = this.requireClient();
+    const parsed = this.decodeThreadId(threadId);
+    const peerId = toNumberId(parsed.peerId, 'peerId');
+    const targetUserId = toNumberId(userId, 'userId');
+
+    if (parsed.chatType === 'group') {
+      const member = await client.get_group_member_info({
+        group_id: peerId,
+        user_id: targetUserId
+      });
+      return toGroupMemberProfile(member, this.selfId);
+    }
+
+    const members = await this.fetchPrivateMembers(peerId);
+    return members.find((member) => member.userId === String(targetUserId)) ?? null;
+  }
+
+  /** 查询 channel 成员列表（QQ 采用会话即 channel 模型，委托到 fetchThreadMembers）。 */
+  public async fetchChannelMembers(channelId: string): Promise<QQMemberProfile[]> {
+    return this.fetchThreadMembers(channelId);
+  }
+
+  /** 查询 channel 单个成员（QQ 采用会话即 channel 模型，委托到 fetchThreadMember）。 */
+  public async fetchChannelMember(
+    channelId: string,
+    userId: string
+  ): Promise<QQMemberProfile | null> {
+    return this.fetchThreadMember(channelId, userId);
+  }
+
   /** 获取 thread 详细信息（通过 NapCat 查询）。 */
   public async fetchThread(threadId: string): Promise<ThreadInfo> {
     const client = this.requireClient();
     const parsed = this.decodeThreadId(threadId);
     const peerId = toNumberId(parsed.peerId, 'peerId');
 
+    // 群聊
     if (parsed.chatType === 'group') {
       const info = await client.get_group_info({ group_id: peerId });
 
@@ -365,6 +432,25 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
       };
     }
 
+    // 好友单聊
+    const friend = await this.findFriendById(peerId);
+    if (friend) {
+      const channelName = friend.remark || friend.nickname || String(peerId);
+
+      return {
+        id: threadId,
+        channelId: threadId,
+        channelName,
+        isDM: true,
+        metadata: {
+          chatType: parsed.chatType,
+          peerId: parsed.peerId,
+          private: friend,
+          source: 'friend_list'
+        }
+      };
+    }
+
     const profile = await client.get_stranger_info({ user_id: peerId });
     const channelName = profile.remark || profile.nickname || profile.nick || String(peerId);
 
@@ -376,7 +462,8 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
       metadata: {
         chatType: parsed.chatType,
         peerId: parsed.peerId,
-        private: profile
+        private: profile,
+        source: 'stranger_info'
       }
     };
   }
@@ -474,6 +561,35 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
       attachments: toAttachments(raw.message),
       raw
     });
+  }
+
+  private async fetchPrivateMembers(peerId: number): Promise<QQMemberProfile[]> {
+    const client = this.requireClient();
+    const login = await client.get_login_info();
+
+    this.selfId = String(login.user_id);
+
+    const selfMember = toSelfMemberProfile(login);
+    const friend = await this.findFriendById(peerId);
+
+    const peerMember = friend
+      ? toPrivateFriendMemberProfile(friend, selfMember.userId)
+      : toPrivatePeerMemberProfile(
+          await client.get_stranger_info({ user_id: peerId }),
+          selfMember.userId
+        );
+
+    if (peerMember.userId === selfMember.userId) {
+      return [selfMember];
+    }
+
+    return [selfMember, peerMember];
+  }
+
+  private async findFriendById(userId: number): Promise<QQFriendInfo | undefined> {
+    const client = this.requireClient();
+    const friends = await client.get_friend_list();
+    return friends.find((item) => item.user_id === userId);
   }
 
   private bindListeners(): void {

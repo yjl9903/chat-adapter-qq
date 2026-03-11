@@ -41,6 +41,9 @@ importers:
       '@chat-adapter/shared':
         specifier: ^4.18.0
         version: 4.19.0
+      lru-cache:
+        specifier: ^11.2.6
+        version: 11.2.6
       node-napcat-ts:
         specifier: ^0.4.21
         version: 0.4.21
@@ -763,6 +766,10 @@ packages:
 
   longest-streak@3.1.0:
     resolution: {integrity: sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==}
+
+  lru-cache@11.2.6:
+    resolution: {integrity: sha512-ESL2CrkS/2wTPfuend7Zhkzo2u0daGJ/A2VucJOgQ/C48S/zB8MMeMHSGKYpXhIjbPxfuezITkaBH1wqv00DDQ==}
+    engines: {node: 20 || >=22}
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -1795,6 +1802,8 @@ snapshots:
   jsonc-parser@3.3.1: {}
 
   longest-streak@3.1.0: {}
+
+  lru-cache@11.2.6: {}
 
   magic-string@0.30.21:
     dependencies:
