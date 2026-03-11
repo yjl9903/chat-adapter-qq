@@ -261,6 +261,9 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     this.decodeThreadId(threadId);
 
     const emojiId = normalizeQQEmojiId(emoji);
+
+    this.logger.debug('send_msg_emoji_like', threadId, messageId, emojiId, true);
+
     await client.set_msg_emoji_like({
       message_id: toNumberId(messageId, 'messageId'),
       emoji_id: emojiId,
@@ -278,6 +281,9 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     this.decodeThreadId(threadId);
 
     const emojiId = normalizeQQEmojiId(emoji);
+
+    this.logger.debug('send_msg_emoji_like', threadId, messageId, emojiId, false);
+
     await client.set_msg_emoji_like({
       message_id: toNumberId(messageId, 'messageId'),
       emoji_id: emojiId,

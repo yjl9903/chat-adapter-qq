@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createMemoryState } from '@chat-adapter/state-memory';
-import { type EmojiValue, type Message, type Thread, Chat, NotImplementedError } from 'chat';
+import { type EmojiValue, type Message, type Thread, Chat, NotImplementedError, emoji } from 'chat';
 
 import { createQQAdapter, type QQGroupMessage, type QQPrivateMessage } from '../src/index.js';
 
@@ -251,6 +251,20 @@ describe('QQ adapter methods', () => {
     expect(ctx.client.emojiLikeCalls).toEqual([
       { message_id: 42, emoji_id: '128077', set: true },
       { message_id: 42, emoji_id: '128077', set: false }
+    ]);
+  });
+
+  it('fills missing builtin emoji with decimal code points without overriding existing maps', async () => {
+    const ctx = await createQQTestContext();
+
+    await ctx.adapter.addReaction('qq:group:30003', '42', emoji.smile);
+    await ctx.adapter.addReaction('qq:group:30003', '42', emoji.thumbs_up);
+    await ctx.adapter.addReaction('qq:group:30003', '42', emoji.heart);
+
+    expect(ctx.client.emojiLikeCalls).toEqual([
+      { message_id: 42, emoji_id: '128522', set: true },
+      { message_id: 42, emoji_id: '76', set: true },
+      { message_id: 42, emoji_id: '66', set: true }
     ]);
   });
 

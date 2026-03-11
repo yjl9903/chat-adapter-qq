@@ -41,6 +41,12 @@ bot.onSubscribedMessage(async (thread, message) => {
   bot.getLogger(thread.adapter.name).info('onSubscribedMessage', message);
   await thread.post(`收到消息: ${message.text}`);
   await writeMessage(message);
+
+  const adapter = bot.getAdapter('qq');
+  const threadId = adapter.decodeThreadId(thread.id);
+  if (threadId.chatType === 'group') {
+    adapter.addReaction(thread.id, message.id, '76');
+  }
 });
 
 async function writeMessage(message: Message<unknown>) {
