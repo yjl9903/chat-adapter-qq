@@ -67,8 +67,8 @@ importers:
         specifier: ^4.20.0
         version: 4.20.0
       chat:
-        specifier: ^4.19.0
-        version: 4.19.0
+        specifier: ^4.20.0
+        version: 4.20.0
       node-napcat-ts:
         specifier: 0.4.21
         version: 0.4.21(patch_hash=bd08fb7db8bf2dde87babbc120e3157023518c4005d762a242e46e3ce5a0a79e)
@@ -82,7 +82,7 @@ importers:
         specifier: ^12.6.2
         version: 12.6.2
       chat:
-        specifier: ^4.19.0
+        specifier: ^4.20.0
         version: 4.20.0
 
 packages:
@@ -672,9 +672,6 @@ packages:
 
   character-entities@2.0.2:
     resolution: {integrity: sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ==}
-
-  chat@4.19.0:
-    resolution: {integrity: sha512-DKcs4yQ5RyQ7LWercePBSttiKpsb6EBkQEBq6UrFyyS0R6UgxO4Ow2s0JwdeSplM9OHJ+Jx6ahYdIJKHHccJhw==}
 
   chat@4.20.0:
     resolution: {integrity: sha512-9/SvX0wM1AZa7VyibyVjRkb3WsbmSbIm54i1MMtzFQEj96oAisFdxkRoBKQDZ4R9tfLe7f6SOwWIHqwCGaCxoA==}
@@ -1856,18 +1853,6 @@ snapshots:
   chai@6.2.2: {}
 
   character-entities@2.0.2: {}
-
-  chat@4.19.0:
-    dependencies:
-      '@workflow/serde': 4.1.0-beta.2
-      mdast-util-to-string: 4.0.0
-      remark-gfm: 4.0.1
-      remark-parse: 11.0.0
-      remark-stringify: 11.0.0
-      remend: 1.2.2
-      unified: 11.0.5
-    transitivePeerDependencies:
-      - supports-color
 
   chat@4.20.0:
     dependencies:
