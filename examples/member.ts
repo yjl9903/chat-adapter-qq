@@ -39,5 +39,4 @@ const groupMembers = await adapter.fetchThreadMembers(process.env.NAPCAT_GROUP_T
 console.log('group', groupMembers);
 
 await bot.shutdown();
-
-process.exit();
+await bot.getAdapter('qq').shutdown();

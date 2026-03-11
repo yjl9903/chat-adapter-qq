@@ -1,6 +1,7 @@
 import {
   type Adapter,
   type AdapterPostableMessage,
+  type Author,
   type ChannelInfo,
   type ChatInstance,
   type EmojiValue,
@@ -30,7 +31,7 @@ import type {
   QQThreadId
 } from './types.js';
 
-import { QQFormatConverter, extractText, toAttachments } from './format-converter.js';
+import { QQFormatConverter, type QQParsedIncomingMessage } from './converter/index.js';
 import { normalizeQQEmojiId } from './emoji.js';
 import { CachedNCWebsocket } from './napcat/cached-client.js';
 import {
@@ -113,6 +114,12 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     return this.initializing;
   }
 
+  public async shutdown(): Promise<void> {
+    try {
+      this.client?.disconnect();
+    } catch {}
+  }
+
   private async doInitialize(chat: ChatInstance): Promise<void> {
     this.chat = chat;
     this.logger = this.config.logger ?? chat.getLogger(this.name);
@@ -123,8 +130,9 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
         this.config.debug ?? false,
         this.config.cache
       );
-      this.converter = new QQFormatConverter(this.client);
     }
+
+    this.converter = new QQFormatConverter(this.client);
 
     this.bindListeners();
 
@@ -550,45 +558,50 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
   /** 将 NapCat 原始消息转换为 Chat SDK 标准 Message。 */
   public parseMessage(raw: QQRawMessage): Message<QQRawMessage> {
+    return this.toMessage(raw, this.converter.parseIncomingSync(raw), undefined);
+  }
+
+  /** 将 NapCat 原始消息转换为 Chat SDK Message，并按线程成员信息修正 author。 */
+  public async parseThreadMessage(raw: QQRawMessage): Promise<Message<QQRawMessage>> {
+    const parsed = await this.converter.parseIncoming(raw);
     const threadId = this.encodeThreadId(toThreadId(raw));
-    const text = extractText(raw);
+    const userId = String(raw.user_id);
+
+    const member = await this.fetchThreadMember(threadId, userId).catch(() => null);
+    const author: Author | undefined = member
+      ? {
+          userId: member.userId,
+          userName: member.userName,
+          fullName: member.cardName || member.userName || member.userId,
+          isBot: member.isBot,
+          isMe: member.isMe
+        }
+      : undefined;
+
+    return this.toMessage(raw, parsed, author);
+  }
+
+  private toMessage(
+    raw: QQRawMessage,
+    parsed: QQParsedIncomingMessage,
+    author?: Author
+  ): Message<QQRawMessage> {
+    const threadId = this.encodeThreadId(toThreadId(raw));
     const isMe = this.selfId !== undefined && String(raw.user_id) === this.selfId;
 
     return new Message<QQRawMessage>({
       id: String(raw.message_id),
       threadId,
-      text,
-      formatted: this.converter.toAst(text),
-      author: toAuthor(raw, isMe),
+      text: parsed.text,
+      formatted: parsed.formatted,
+      author: author ?? toAuthor(raw, isMe),
       metadata: {
         dateSent: new Date(raw.time * 1000),
         edited: false
       },
-      attachments: toAttachments(raw.message),
+      attachments: parsed.attachments,
       raw
     });
-  }
-
-  /** 将 NapCat 原始消息转换为 Chat SDK Message，并按线程成员信息修正 author。 */
-  public async parseThreadMessage(raw: QQRawMessage): Promise<Message<QQRawMessage>> {
-    const message = this.parseMessage(raw);
-    const threadId = message.threadId;
-    const userId = String(raw.user_id);
-
-    const member = await this.fetchThreadMember(threadId, userId).catch(() => null);
-    if (!member) {
-      return message;
-    }
-
-    message.author = {
-      userId: member.userId,
-      userName: member.userName,
-      fullName: member.cardName || member.userName || member.userId,
-      isBot: member.isBot,
-      isMe: member.isMe
-    };
-
-    return message;
   }
 
   private async fetchPrivateMembers(peerId: number): Promise<QQMemberProfile[]> {
@@ -694,7 +707,6 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     this.chat.processMessage(this, threadId, async () => {
       const message = await this.parseThreadMessage(raw);
       message.isMention = mention;
-
       return message;
     });
   }

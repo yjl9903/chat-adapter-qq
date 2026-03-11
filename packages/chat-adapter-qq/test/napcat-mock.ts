@@ -24,6 +24,7 @@ export class MockNapcatClient {
   friendHistoryCalls: Array<{ user_id: number; message_seq?: number; count?: number }> = [];
   inputStatusCalls: Array<{ user_id: string; event_type: number }> = [];
   getMsgCalls: number[] = [];
+  getForwardMsgCalls: string[] = [];
   getGroupInfoCalls: number[] = [];
   getGroupMemberListCalls: number[] = [];
   getGroupMemberInfoCalls: Array<{ group_id: number; user_id: number }> = [];
@@ -36,6 +37,7 @@ export class MockNapcatClient {
   private readonly groupHistory = new Map<number, QQRawMessage[]>();
   private readonly friendHistory = new Map<number, QQRawMessage[]>();
   private readonly messagesById = new Map<number, QQRawMessage>();
+  private readonly forwardMessagesById = new Map<string, QQRawMessage[]>();
   private readonly groupInfoById = new Map<
     number,
     {
@@ -184,6 +186,18 @@ export class MockNapcatClient {
     return found;
   }
 
+  async get_forward_msg(params: { message_id: string }): Promise<{ messages: QQRawMessage[] }> {
+    this.getForwardMsgCalls.push(params.message_id);
+    const found = this.forwardMessagesById.get(params.message_id);
+    if (!found) {
+      throw new Error(`Forward message not found: ${params.message_id}`);
+    }
+
+    return {
+      messages: found
+    };
+  }
+
   async get_group_info(params: { group_id: number }): Promise<{
     group_all_shut: number;
     group_remark: string;
@@ -294,6 +308,13 @@ export class MockNapcatClient {
 
   setMessage(message: QQRawMessage): void {
     this.messagesById.set(message.message_id, message);
+  }
+
+  setForwardMessages(forwardId: string, messages: QQRawMessage[]): void {
+    this.forwardMessagesById.set(forwardId, messages);
+    for (const message of messages) {
+      this.messagesById.set(message.message_id, message);
+    }
   }
 
   setGroupInfo(

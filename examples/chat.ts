@@ -1,10 +1,17 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 
-import { type Message, Chat, emoji } from 'chat';
+import { type Message, Chat, emoji, stringifyMarkdown } from 'chat';
 import { createMemoryState } from '@chat-adapter/state-memory';
 
 import { createQQAdapter } from '../packages/chat-adapter-qq/src/index.js';
+
+process.on('uncaughtException', (error) => {
+  console.error('uncaughtException', error);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('unhandledRejection', reason);
+});
 
 const bot = new Chat({
   userName: '',
@@ -32,6 +39,8 @@ await bot.initialize();
 
 bot.onNewMention(async (thread, message) => {
   bot.getLogger(thread.adapter.name).info('onNewMention', message);
+  bot.getLogger(thread.adapter.name).info(stringifyMarkdown(message.formatted));
+
   await thread.subscribe();
   await thread.post(`订阅频道: ${message.text}`);
   await writeMessage(message);
@@ -39,6 +48,8 @@ bot.onNewMention(async (thread, message) => {
 
 bot.onSubscribedMessage(async (thread, message) => {
   bot.getLogger(thread.adapter.name).info('onSubscribedMessage', message);
+  bot.getLogger(thread.adapter.name).info(stringifyMarkdown(message.formatted));
+
   await thread.post(`收到消息: ${message.text}`);
   await writeMessage(message);
 

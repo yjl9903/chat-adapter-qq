@@ -62,5 +62,4 @@ if (resp1.nextCursor) {
 }
 
 await bot.shutdown();
-
-process.exit();
+await bot.getAdapter('qq').shutdown();
