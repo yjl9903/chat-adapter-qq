@@ -6,6 +6,12 @@
 
 基于 [NapCat](https://napneko.github.io/) 和 [node-napcat-ts](https://node-napcat-ts.huankong.top/) 的 [Chat SDK](https://chat-sdk.dev/docs) **QQ 适配器**.
 
+- 支持接入 QQ 群聊 / 私聊消息接入
+- 支持发送消息、撤回消息
+- 支持群聊消息贴表情和私聊输入状态。
+- 支持查询消息记录 / 成员列表 / 成员信息
+- 支持渲染 QQ 消息内容到 markdown 格式, 包括: 图片, 文件, 回复消息, 合并转发消息等格式
+
 ## 安装
 
 ```bash
@@ -38,12 +44,6 @@ const bot = new Chat({
           attempts: 10,
           delay: 5000
         }
-      },
-      // ↓ 心跳轮询 (可选，默认启用)
-      heartbeat: {
-        intervalMs: 30_000,
-        failureThreshold: 2,
-        reconnectOnFailure: true
       }
     })
   },
