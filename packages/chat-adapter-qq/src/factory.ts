@@ -28,10 +28,7 @@ export function createQQAdapter(config: QQAdapterConfig): QQAdapter {
     throw new ValidationError('qq', `QQ heartbeat intervalMs must be a positive integer.`);
   }
 
-  if (
-    heartbeat?.failureThreshold !== undefined &&
-    !isPositiveInteger(heartbeat.failureThreshold)
-  ) {
+  if (heartbeat?.failureThreshold !== undefined && !isPositiveInteger(heartbeat.failureThreshold)) {
     throw new ValidationError('qq', `QQ heartbeat failureThreshold must be a positive integer.`);
   }
 

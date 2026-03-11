@@ -2,9 +2,9 @@ import 'dotenv/config';
 import fs from 'node:fs';
 
 import { type Message, Chat, emoji, stringifyMarkdown } from 'chat';
-import { createMemoryState } from '@chat-adapter/state-memory';
 
 import { createQQAdapter } from '../packages/chat-adapter-qq/src/index.js';
+import { createSqliteState } from '../packages/chat-adapter-sqlite/src/index.js';
 
 process.on('uncaughtException', (error) => {
   console.error('uncaughtException', error);
@@ -32,7 +32,7 @@ const bot = new Chat({
       }
     })
   },
-  state: createMemoryState()
+  state: createSqliteState({ path: 'chat.sqlite' })
 });
 
 await bot.initialize();

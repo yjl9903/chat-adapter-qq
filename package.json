@@ -26,5 +26,8 @@
   "packageManager": "pnpm@10.32.1",
   "engines": {
     "node": ">=v20.10.0"
+  },
+  "dependencies": {
+    "@types/better-sqlite3": "^7.6.13"
   }
 }
