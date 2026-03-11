@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 
-import { type Message, Chat } from 'chat';
+import { type Message, Chat, emoji } from 'chat';
 import { createMemoryState } from '@chat-adapter/state-memory';
 
 import { createQQAdapter } from '../packages/chat-adapter-qq/src/index.js';
@@ -45,7 +45,7 @@ bot.onSubscribedMessage(async (thread, message) => {
   const adapter = bot.getAdapter('qq');
   const threadId = adapter.decodeThreadId(thread.id);
   if (threadId.chatType === 'group') {
-    adapter.addReaction(thread.id, message.id, '76');
+    adapter.addReaction(thread.id, message.id, emoji.thumbs_up);
   }
 });
 
