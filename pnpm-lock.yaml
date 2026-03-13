@@ -67,8 +67,8 @@ importers:
         specifier: ^4.20.1
         version: 4.20.1
       chat:
-        specifier: ^4.20.0
-        version: 4.20.0
+        specifier: ^4.20.1
+        version: 4.20.1
       node-napcat-ts:
         specifier: 0.4.22
         version: 0.4.22(patch_hash=bd08fb7db8bf2dde87babbc120e3157023518c4005d762a242e46e3ce5a0a79e)
@@ -82,8 +82,8 @@ importers:
         specifier: ^12.6.2
         version: 12.6.2
       chat:
-        specifier: ^4.20.0
-        version: 4.20.0
+        specifier: ^4.20.1
+        version: 4.20.1
 
 packages:
 
