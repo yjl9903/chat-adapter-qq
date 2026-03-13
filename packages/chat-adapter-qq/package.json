@@ -43,7 +43,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@chat-adapter/shared": "^4.20.0",
+    "@chat-adapter/shared": "^4.20.1",
     "isomorphic-ws": "^5.0.0",
     "lru-cache": "^11.2.6",
     "nanoid": "^5.1.6",
