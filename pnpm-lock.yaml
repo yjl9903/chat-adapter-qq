@@ -64,8 +64,8 @@ importers:
         version: 8.19.0
     devDependencies:
       '@chat-adapter/state-memory':
-        specifier: ^4.20.1
-        version: 4.20.1
+        specifier: ^4.20.2
+        version: 4.20.2
       chat:
         specifier: ^4.20.1
         version: 4.20.1
@@ -111,8 +111,8 @@ packages:
   '@chat-adapter/shared@4.20.2':
     resolution: {integrity: sha512-cTtTVHgH/2l9/+ILSExCr/kZwzz2Y8tp7WKRweMRWFOBcXZ0U5ZtviZCCDWBqU/YOBilQUgON8vIP9eo1w0m5w==}
 
-  '@chat-adapter/state-memory@4.20.1':
-    resolution: {integrity: sha512-JtITUuz4xYwXMOSH8dCYjuxgIgtkecVH5RUVR46PT9Nh8QT4l6WRMNZvdrWkJOn9jOZToXiNS/ae0OFJHJtN+g==}
+  '@chat-adapter/state-memory@4.20.2':
+    resolution: {integrity: sha512-4388hp9Wsp87jMgSpkPfN4abflgIgQn5M3MLSDYdU4f20PNKrUkzhb8elkyPmYliF4MInZUau+llc26b7hZsng==}
 
   '@emnapi/core@1.8.1':
     resolution: {integrity: sha512-AvT9QFpxK0Zd8J0jopedNm+w/2fIzvtPKPjqyw9jwvBaReTTqPBk9Hixaz7KbjimP+QNz605/XnjFcDAL2pqBg==}
@@ -1326,9 +1326,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@chat-adapter/state-memory@4.20.1':
+  '@chat-adapter/state-memory@4.20.2':
     dependencies:
-      chat: 4.20.1
+      chat: 4.20.2
     transitivePeerDependencies:
       - supports-color
 
