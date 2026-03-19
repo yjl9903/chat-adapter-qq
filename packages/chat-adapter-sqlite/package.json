@@ -1,6 +1,6 @@
 {
   "name": "chat-adapter-sqlite",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "SQLite state adapter for Chat SDK based on better-sqlite3",
   "keywords": [
     "sqlite",
