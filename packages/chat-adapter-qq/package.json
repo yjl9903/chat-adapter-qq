@@ -1,6 +1,6 @@
 {
   "name": "chat-adapter-qq",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "QQ adapter for Chat SDK based on NapCat",
   "keywords": [
     "qq",
@@ -10,13 +10,13 @@
     "chat-sdk",
     "chat-adapter"
   ],
-  "homepage": "https://github.com/yjl9903/openana#readme",
+  "homepage": "https://github.com/yjl9903/chat-adapter-qq#readme",
   "bugs": {
-    "url": "https://github.com/yjl9903/openana/issues"
+    "url": "https://github.com/yjl9903/chat-adapter-qq/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yjl9903/openana.git",
+    "url": "git+https://github.com/yjl9903/chat-adapter-qq.git",
     "directory": "packages/chat-adapter-qq"
   },
   "license": "MIT",
