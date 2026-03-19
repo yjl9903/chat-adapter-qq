@@ -133,70 +133,77 @@ export class QQFormatConverter extends BaseFormatConverter {
   }
 
   public parseIncomingSync(raw: QQRawMessage): QQParsedIncomingMessage {
-    const segments = raw.message;
-    const markdownParts: string[] = [];
-    const attachments: Attachment[] = [];
-
-    for (const segment of segments) {
-      if (isFilteredSegment(segment)) {
-        continue;
-      }
-
-      const markdown = this.segmentToMarkdown(segment);
-      if (markdown.length > 0) {
-        markdownParts.push(markdown);
-      }
-
-      const attachment = attachmentFromSegment(segment);
-      if (attachment) {
-        attachments.push(attachment);
-      }
-    }
-
-    return this.finalizeParsedMessage(raw, segments, markdownParts, attachments);
+    return this.processSegments(raw, (segment) => this.segmentToMarkdown(segment));
   }
 
   /** 将 NapCat raw message 转为 markdown / ast / text / attachments。 */
   public async parseIncoming(raw: QQRawMessage): Promise<QQParsedIncomingMessage> {
     const segments = raw.message;
-    const markdownParts: string[] = [];
-    const attachments: Attachment[] = [];
-
     const activeSegments = segments.filter((segment) => !isFilteredSegment(segment));
+
+    // Forward-only messages: expand the entire forward content.
     if (activeSegments.length === 1 && activeSegments[0].type === 'forward') {
       const markdown = await this.fetchForwardMessage(raw.message_id, activeSegments[0].data.id);
-      if (markdown.length > 0) {
-        markdownParts.push(markdown);
-      }
-      return this.finalizeParsedMessage(raw, segments, markdownParts, attachments);
+      return this.finalizeParsedMessage(raw, segments, markdown ? [markdown] : [], []);
     }
 
+    // Resolve reply segments asynchronously; all others use sync conversion.
     let activeIndex = 0;
-    for (const segment of segments) {
-      if (isFilteredSegment(segment)) {
-        continue;
-      }
-
-      let markdown: string;
+    return this.processSegments(raw, (segment) => {
+      const idx = activeIndex++;
       // Assumption: reply only appears at the beginning of a message.
-      if (segment.type === 'reply' && activeIndex === 0) {
-        markdown = await this.fetchReplyMessage(segment.data.id);
-      } else {
-        markdown = this.segmentToMarkdown(segment);
+      if (segment.type === 'reply' && idx === 0) {
+        return this.fetchReplyMessage(segment.data.id);
       }
-      activeIndex += 1;
+      return this.segmentToMarkdown(segment);
+    });
+  }
 
-      if (markdown.length > 0) {
-        markdownParts.push(markdown);
-      }
+  /**
+   * Shared segment processing: iterates segments, collects markdown parts and
+   * attachments via a caller-supplied converter that may return sync or async.
+   */
+  private processSegments(
+    raw: QQRawMessage,
+    convert: (segment: QQMessageSegment) => string | Promise<string>
+  ): QQParsedIncomingMessage;
+  private processSegments(
+    raw: QQRawMessage,
+    convert: (segment: QQMessageSegment) => Promise<string>
+  ): Promise<QQParsedIncomingMessage>;
+  private processSegments(
+    raw: QQRawMessage,
+    convert: (segment: QQMessageSegment) => string | Promise<string>
+  ): QQParsedIncomingMessage | Promise<QQParsedIncomingMessage> {
+    const segments = raw.message;
+    const markdownParts: (string | Promise<string>)[] = [];
+    const attachments: Attachment[] = [];
+    let hasAsync = false;
+
+    for (const segment of segments) {
+      if (isFilteredSegment(segment)) continue;
+
+      const markdown = convert(segment);
+      if (markdown instanceof Promise) hasAsync = true;
+      markdownParts.push(markdown);
 
       const attachment = attachmentFromSegment(segment);
-      if (attachment) {
-        attachments.push(attachment);
-      }
+      if (attachment) attachments.push(attachment);
     }
 
-    return this.finalizeParsedMessage(raw, segments, markdownParts, attachments);
+    if (!hasAsync) {
+      const resolved = (markdownParts as string[]).filter((part) => part.length > 0);
+      return this.finalizeParsedMessage(raw, segments, resolved, attachments);
+    }
+
+    return Promise.all(markdownParts).then((resolved) =>
+      this.finalizeParsedMessage(
+        raw,
+        segments,
+        resolved.filter((part) => part.length > 0),
+        attachments
+      )
+    );
   }
 
   private async fetchReplyMessage(messageId: string): Promise<string> {

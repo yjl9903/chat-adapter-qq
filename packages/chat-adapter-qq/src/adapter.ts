@@ -117,7 +117,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     return this.initializing;
   }
 
-  public async shutdown(): Promise<void> {
+  public async disconnect(): Promise<void> {
     this.stopHeartbeat();
 
     if (!this.client) return;
@@ -274,18 +274,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     messageId: string,
     emoji: EmojiValue | string
   ): Promise<void> {
-    const client = this.requireClient();
-    this.decodeThreadId(threadId);
-
-    const emojiId = normalizeQQEmojiId(emoji);
-
-    this.logger.debug('send_msg_emoji_like', threadId, messageId, emojiId, true);
-
-    await client.set_msg_emoji_like({
-      message_id: toNumberId(messageId, 'messageId'),
-      emoji_id: emojiId,
-      set: true
-    });
+    return this.setReaction(threadId, messageId, emoji, true);
   }
 
   /** 移除消息表情反应（映射到 NapCat emoji_like）。 */
@@ -294,17 +283,26 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     messageId: string,
     emoji: EmojiValue | string
   ): Promise<void> {
+    return this.setReaction(threadId, messageId, emoji, false);
+  }
+
+  private async setReaction(
+    threadId: string,
+    messageId: string,
+    emojiValue: EmojiValue | string,
+    set: boolean
+  ): Promise<void> {
     const client = this.requireClient();
     this.decodeThreadId(threadId);
 
-    const emojiId = normalizeQQEmojiId(emoji);
+    const emojiId = normalizeQQEmojiId(emojiValue);
 
-    this.logger.debug('send_msg_emoji_like', threadId, messageId, emojiId, false);
+    this.logger.debug('send_msg_emoji_like', threadId, messageId, emojiId, set);
 
     await client.set_msg_emoji_like({
       message_id: toNumberId(messageId, 'messageId'),
       emoji_id: emojiId,
-      set: false
+      set
     });
   }
 
@@ -646,17 +644,10 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
   private startHeartbeat(): void {
     if (!this.heartbeat) {
       this.heartbeat = new QQNapcatConnectionHeartbeat({
+        ...this.config.heartbeat,
         logger: this.logger,
-        intervalMs: this.config.heartbeat?.intervalMs,
-        failureThreshold: this.config.heartbeat?.failureThreshold,
-        reconnectOnFailure: this.config.heartbeat?.reconnectOnFailure,
-        getStatus: async () => {
-          const client = this.requireClient();
-          return client.get_status();
-        },
-        reconnect: async () => {
-          await this.reconnectClient();
-        }
+        getStatus: () => this.requireClient().get_status(),
+        reconnect: () => this.reconnectClient()
       });
     }
 
@@ -695,18 +686,14 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
       return;
     }
 
-    this.client.on('message.group', this.onGroupMessage);
-    this.client.on('message.private', this.onPrivateMessage);
+    this.client.on('message.group', this.onMessage);
+    this.client.on('message.private', this.onMessage);
     this.client.on('notice.group_msg_emoji_like', this.onEmojiLikeMessage);
 
     this.listenersBound = true;
   }
 
-  private readonly onGroupMessage = async (raw: QQGroupMessage) => {
-    this.dispatchIncomingMessage(raw);
-  };
-
-  private readonly onPrivateMessage = async (raw: QQPrivateMessage) => {
+  private readonly onMessage = (raw: QQGroupMessage | QQPrivateMessage) => {
     this.dispatchIncomingMessage(raw);
   };
 

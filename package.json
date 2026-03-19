@@ -15,6 +15,7 @@
   "devDependencies": {
     "@types/node": "^24.12.0",
     "bumpp": "latest",
+    "dotenv": "^17.3.1",
     "prettier": "^3.8.1",
     "tsdown": "^0.21.4",
     "tsx": "^4.21.0",
