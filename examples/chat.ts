@@ -1,10 +1,10 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 
-import { type Message, Chat, emoji, stringifyMarkdown } from 'chat';
+import { type Message, Chat, emoji, paragraph, root, stringifyMarkdown, text } from 'chat';
 
-import { createQQAdapter } from '../packages/chat-adapter-qq/src/index.js';
 import { createSqliteState } from '../packages/chat-adapter-sqlite/src/index.js';
+import { createQQAdapter, at, reply } from '../packages/chat-adapter-qq/src/index.js';
 
 process.on('uncaughtException', (error) => {
   console.error('uncaughtException', error);
@@ -50,7 +50,19 @@ bot.onSubscribedMessage(async (thread, message) => {
   bot.getLogger(thread.adapter.name).info('onSubscribedMessage', message);
   bot.getLogger(thread.adapter.name).info(stringifyMarkdown(message.formatted));
 
-  await thread.post(`收到消息: ${message.text}`);
+  await thread.refresh();
+
+  // await thread.post({
+  //   ast: root([forward(...thread.recentMessages.slice(-5).map((m) => m.id))])
+  // });
+
+  await thread.post({
+    ast: root([
+      reply(message.id),
+      paragraph([at(message.author.userId), text(' '), text('测试回复')])
+    ])
+  });
+
   await writeMessage(message);
 
   const adapter = bot.getAdapter('qq');

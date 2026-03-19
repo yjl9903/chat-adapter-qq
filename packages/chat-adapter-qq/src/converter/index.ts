@@ -1,6 +1,8 @@
 import {
+  type AdapterPostableMessage,
   type Root,
   type Attachment,
+  type Logger,
   BaseFormatConverter,
   parseMarkdown,
   stringifyMarkdown
@@ -9,8 +11,9 @@ import type { Receive } from 'node-napcat-ts';
 
 import type { QQNapcatClient, QQRawMessage } from '../types.js';
 
-import { isHttpUrl, parseSize, basename } from './utils.js';
 import { toPlainTextPreserveBreaks } from './to-plain-text.js';
+import { isHttpUrl, parseSize, basename } from './utils.js';
+import { type SegmentBuilder, renderOutgoingSegments } from './outgoing.js';
 
 /** NapCat 入站 message segment 的联合类型。 */
 export type QQMessageSegment = Receive[keyof Receive];
@@ -118,10 +121,12 @@ function attachmentFromSegment(segment: QQMessageSegment): Attachment | null {
 
 export class QQFormatConverter extends BaseFormatConverter {
   private readonly client?: QQNapcatClient;
+  private readonly logger?: Logger;
 
-  public constructor(client?: QQNapcatClient) {
+  public constructor(client?: QQNapcatClient, logger?: Logger) {
     super();
     this.client = client;
+    this.logger = logger;
   }
 
   public toAst(platformText: string): Root {
@@ -130,6 +135,11 @@ export class QQFormatConverter extends BaseFormatConverter {
 
   public fromAst(ast: Root): string {
     return stringifyMarkdown(ast);
+  }
+
+  /** Convert an AdapterPostableMessage to NapCat outgoing segments. */
+  public async renderOutgoing(message: AdapterPostableMessage): Promise<SegmentBuilder> {
+    return renderOutgoingSegments(message, this.logger);
   }
 
   public parseIncomingSync(raw: QQRawMessage): QQParsedIncomingMessage {

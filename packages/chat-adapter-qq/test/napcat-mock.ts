@@ -1,4 +1,4 @@
-import type { SendMessageSegment } from 'node-napcat-ts';
+import type { NodeSegment, SendMessageSegment } from 'node-napcat-ts';
 import {
   createQQAdapter,
   type QQGroupMemberInfo,
@@ -28,6 +28,9 @@ export class MockNapcatClient {
   deletedMessages: number[] = [];
   sentGroupMessages: Array<{ group_id: number; message: SendMessageSegment[] }> = [];
   sentPrivateMessages: Array<{ user_id: number; message: SendMessageSegment[] }> = [];
+  sentForwardMessages: Array<
+    ({ group_id: number } | { user_id: number }) & { message: NodeSegment[] }
+  > = [];
   emojiLikeCalls: Array<{ message_id: number; emoji_id: string; set?: boolean }> = [];
   groupHistoryCalls: Array<{ group_id: number; message_seq?: number; count?: number }> = [];
   friendHistoryCalls: Array<{ user_id: number; message_seq?: number; count?: number }> = [];
@@ -155,6 +158,26 @@ export class MockNapcatClient {
   }): Promise<{ message_id: number }> {
     this.sentPrivateMessages.push(params);
     return { message_id: this.nextMessageId++ };
+  }
+
+  async send_forward_msg(
+    params: (
+      | {
+          user_id: number;
+        }
+      | {
+          group_id: number;
+        }
+    ) & {
+      message: NodeSegment[];
+    }
+  ): Promise<{ message_id: number; res_id: string }> {
+    const message_id = this.nextMessageId++;
+    this.sentForwardMessages.push(params);
+    return {
+      message_id,
+      res_id: `fw-${message_id}`
+    };
   }
 
   async delete_msg(params: { message_id: number }): Promise<null> {

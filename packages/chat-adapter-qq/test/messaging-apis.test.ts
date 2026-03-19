@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { type EmojiValue, NotImplementedError, emoji } from 'chat';
 
-import { createQQAdapter } from '../src/index.js';
+import { createQQAdapter, forward } from '../src/index.js';
 
 import { createGroupMessage, createPrivateMessage } from './napcat-mock.js';
 import { createQQTestContext } from './test-context.js';
@@ -29,8 +29,7 @@ describe('QQ adapter messaging APIs', () => {
             "message": [
               {
                 "data": {
-                  "text": "hello **qq**
-      ",
+                  "text": "hello qq",
                 },
                 "type": "text",
               },
@@ -52,6 +51,84 @@ describe('QQ adapter messaging APIs', () => {
         ],
       }
     `);
+  });
+
+  it('sends text + image segments when postMessage includes files', async () => {
+    const ctx = await createQQTestContext();
+
+    await ctx.adapter.postMessage('qq:group:30003', {
+      markdown: 'check this out',
+      files: [{ data: Buffer.from('png-data'), filename: 'photo.png', mimeType: 'image/png' }]
+    });
+
+    const sent = ctx.client.sentGroupMessages[0];
+    expect(sent.message).toHaveLength(2);
+    expect(sent.message[0].type).toBe('text');
+    expect(sent.message[1].type).toBe('image');
+    expect(sent.message[1].data.file).toBe(
+      `base64://${Buffer.from('png-data').toString('base64')}`
+    );
+  });
+
+  it('sends only media segment (no empty text) when markdown is empty with attachments', async () => {
+    const ctx = await createQQTestContext();
+
+    await ctx.adapter.postMessage('qq:group:30003', {
+      markdown: '',
+      attachments: [{ type: 'image', url: 'https://example.com/img.jpg', name: 'img.jpg' }]
+    });
+
+    const sent = ctx.client.sentGroupMessages[0];
+    expect(sent.message).toHaveLength(1);
+    expect(sent.message[0].type).toBe('image');
+    expect(sent.message[0].data.file).toBe('https://example.com/img.jpg');
+  });
+
+  it('uses send_forward_msg when outgoing is a multi-message forward batch', async () => {
+    const ctx = await createQQTestContext();
+
+    await ctx.adapter.postMessage('qq:group:30003', {
+      ast: { type: 'root', children: [forward('123', '456')] }
+    });
+
+    expect({
+      forward: ctx.client.sentForwardMessages,
+      group: ctx.client.sentGroupMessages
+    }).toMatchInlineSnapshot(`
+      {
+        "forward": [
+          {
+            "group_id": 30003,
+            "message": [
+              {
+                "data": {
+                  "id": "123",
+                },
+                "type": "node",
+              },
+              {
+                "data": {
+                  "id": "456",
+                },
+                "type": "node",
+              },
+            ],
+          },
+        ],
+        "group": [],
+      }
+    `);
+  });
+
+  it('preserves space fallback for empty text-only messages (backward compat)', async () => {
+    const ctx = await createQQTestContext();
+
+    await ctx.adapter.postMessage('qq:group:30003', { markdown: '' });
+
+    const sent = ctx.client.sentGroupMessages[0];
+    expect(sent.message).toHaveLength(1);
+    expect(sent.message[0].type).toBe('text');
+    expect(sent.message[0].data).toEqual({ text: ' ' });
   });
 
   it('returns 501 from handleWebhook in WS-only mode', async () => {

@@ -51,6 +51,7 @@
   },
   "devDependencies": {
     "@chat-adapter/state-memory": "^4.20.2",
+    "@types/mdast": "^4.0.4",
     "chat": "^4.20.2",
     "node-napcat-ts": "0.4.22"
   },

@@ -17,7 +17,6 @@ import {
   emoji
 } from 'chat';
 import { ValidationError } from '@chat-adapter/shared';
-import { type SendMessageSegment, Structs } from 'node-napcat-ts';
 
 import type {
   QQAdapterConfig,
@@ -52,7 +51,7 @@ import {
  *
  * 设计说明：
  * - 入口仅支持 WS 事件推送，不支持 HTTP webhook。
- * - thread 模型采用“会话即 thread”：
+ * - thread 模型采用"会话即 thread"：
  *   - 群：`qq:group:{group_id}`
  *   - 私聊：`qq:private:{user_id}`
  */
@@ -139,7 +138,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
       );
     }
 
-    this.converter = new QQFormatConverter(this.client);
+    this.converter = new QQFormatConverter(this.client, this.logger);
 
     this.bindListeners();
 
@@ -225,22 +224,33 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     const parsed = this.decodeThreadId(threadId);
     const peerId = toNumberId(parsed.peerId, 'peerId');
 
-    const text = this.converter.renderPostable(message);
-    const outgoingText = text.length > 0 ? text : ' ';
-    const segments: SendMessageSegment[] = [Structs.text(outgoingText)];
+    const outgoing = await this.converter.renderOutgoing(message);
+    const forwardNodes = outgoing.toForwardNodeSegments();
 
-    this.logger.debug('post message', parsed.chatType, parsed.peerId, segments);
+    this.logger.debug('post message', parsed.chatType, parsed.peerId, forwardNodes ?? outgoing);
 
     const sent =
-      parsed.chatType === 'group'
-        ? await client.send_group_msg({
-            group_id: peerId,
-            message: segments
-          })
-        : await client.send_private_msg({
-            user_id: peerId,
-            message: segments
-          });
+      forwardNodes !== null
+        ? await client.send_forward_msg(
+            parsed.chatType === 'group'
+              ? {
+                  group_id: peerId,
+                  message: forwardNodes
+                }
+              : {
+                  user_id: peerId,
+                  message: forwardNodes
+                }
+          )
+        : parsed.chatType === 'group'
+          ? await client.send_group_msg({
+              group_id: peerId,
+              message: Array.from(outgoing)
+            })
+          : await client.send_private_msg({
+              user_id: peerId,
+              message: Array.from(outgoing)
+            });
 
     return {
       id: String(sent.message_id),

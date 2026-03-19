@@ -51,7 +51,7 @@ describe('QQ adapter heartbeat', () => {
     await vi.advanceTimersByTimeAsync(300);
     expect(ctx.client.getStatusCalls).toBe(4);
 
-    await ctx.adapter.shutdown();
+    await ctx.adapter.disconnect();
   });
 
   it('reconnects when heartbeat status is unhealthy', async () => {
@@ -74,17 +74,17 @@ describe('QQ adapter heartbeat', () => {
       }
     `);
 
-    await ctx.adapter.shutdown();
+    await ctx.adapter.disconnect();
   });
 
-  it('stops heartbeat polling after shutdown', async () => {
+  it('stops heartbeat polling after disconnect', async () => {
     vi.useFakeTimers();
     const ctx = await createHeartbeatContext({ intervalMs: 40 });
 
     await vi.advanceTimersByTimeAsync(40);
     expect(ctx.client.getStatusCalls).toBe(1);
 
-    await ctx.adapter.shutdown();
+    await ctx.adapter.disconnect();
     expect(ctx.client.disconnectCalls).toBe(1);
 
     await vi.advanceTimersByTimeAsync(200);

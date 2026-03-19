@@ -12,11 +12,13 @@ patchedDependencies:
 importers:
 
   .:
-    dependencies:
+    devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
-    devDependencies:
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
       '@types/node':
         specifier: ^24.12.0
         version: 24.12.0
@@ -69,6 +71,9 @@ importers:
       '@chat-adapter/state-memory':
         specifier: ^4.20.2
         version: 4.20.2
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
       chat:
         specifier: ^4.20.2
         version: 4.20.2

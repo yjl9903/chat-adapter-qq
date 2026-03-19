@@ -1,10 +1,12 @@
 import 'dotenv/config';
+
 import fs from 'node:fs';
+import path from 'node:path';
 
 import { Chat } from 'chat';
-import { createMemoryState } from '@chat-adapter/state-memory';
 
 import { createQQAdapter } from '../packages/chat-adapter-qq/src/index.js';
+import { createSqliteState } from '../packages/chat-adapter-sqlite/src/index.js';
 
 const bot = new Chat({
   userName: '',
@@ -25,14 +27,31 @@ const bot = new Chat({
       }
     })
   },
-  state: createMemoryState()
+  state: createSqliteState({ path: 'chat.sqlite' })
 });
 
 await bot.initialize();
 
 const adapter = bot.getAdapter('qq');
 
-// TODO
+bot.onNewMention(async (thread, message) => {
+  await thread.subscribe();
+  await thread.post(`订阅频道: ${message.text}`);
+});
 
-await bot.shutdown();
-await bot.getAdapter('qq').disconnect();
+bot.onSubscribedMessage(async (thread, message) => {
+  const filename = 'assets/熱烈歓迎にたじたじ.png';
+
+  thread.post({
+    markdown: '',
+    files: [
+      {
+        data: await fs.promises.readFile(filename),
+        filename: path.basename(filename)
+      }
+    ]
+  });
+});
+
+// await bot.shutdown();
+// await bot.getAdapter('qq').disconnect();
