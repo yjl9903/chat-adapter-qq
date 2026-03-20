@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/chat-adapter-qq)](https://www.npmjs.com/package/chat-adapter-qq)
 [![CI](https://github.com/yjl9903/chat-adapter-qq/actions/workflows/ci.yml/badge.svg)](https://github.com/yjl9903/chat-adapter-qq/actions/workflows/ci.yml)
 
-基于 [NapCat](https://napneko.github.io/) 和 [node-napcat-ts](https://node-napcat-ts.huankong.top/) 的 [Chat SDK](https://chat-sdk.dev/docs) **QQ 适配器**.
+基于 [NapCat](https://napneko.github.io/) 的 [Chat SDK](https://chat-sdk.dev/docs) **QQ 适配器**.
 
 - 支持接入 QQ 群聊 / 私聊消息接入
 - 支持发送文本消息、撤回消息
