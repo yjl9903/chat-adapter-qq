@@ -88,6 +88,28 @@ describe('QQFormatConverter.renderOutgoing', () => {
     expect(segments[1]).toEqual({ type: 'text', data: { text: 'hello' } });
   });
 
+  it('supports reply metadata on PostableMarkdown', async () => {
+    const segments = await converter().renderOutgoing({
+      markdown: 'hello',
+      reply: '42'
+    });
+
+    expect(Array.from(segments)).toEqual([
+      { type: 'reply', data: { id: '42' } },
+      { type: 'text', data: { text: 'hello' } }
+    ]);
+  });
+
+  it('supports reply metadata on PostableCard', async () => {
+    const segments = await converter().renderOutgoing({
+      card: { type: 'card', title: 'Title', children: [] },
+      reply: '42'
+    });
+
+    expect(segments[0]).toMatchObject({ type: 'reply', data: { id: '42' } });
+    expect(segments[1]).toEqual({ type: 'text', data: { text: 'Title' } });
+  });
+
   it('ignores reply nodes that are not the first root node', async () => {
     const body = converter().toAst('before\n\nafter');
     const segments = await converter().renderOutgoing({
@@ -117,6 +139,16 @@ describe('QQFormatConverter.renderOutgoing', () => {
       { type: 'node', data: { id: '123' } },
       { type: 'node', data: { id: '456' } }
     ]);
+  });
+
+  it('supports forward metadata on PostableAst', async () => {
+    const outgoing = await converter().renderOutgoing({
+      ast: { type: 'root', children: [] },
+      forward: ['123', '456']
+    });
+
+    expect(outgoing.getForwardMessageIds()).toEqual(['123', '456']);
+    expect(Array.from(outgoing)).toEqual([]);
   });
 
   it('ignores forward nodes when other root nodes are present', async () => {

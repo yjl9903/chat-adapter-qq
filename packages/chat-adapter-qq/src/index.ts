@@ -1,6 +1,10 @@
 export { QQAdapter } from './adapter.js';
 
+export { createQQAdapter } from './factory.js';
+
 export { CachedNCWebsocket } from './napcat/cached-client.js';
+
+export { root, paragraph, text } from 'chat';
 
 export {
   type QQAtNode,
@@ -10,8 +14,6 @@ export {
   reply,
   forward
 } from './converter/ast.js';
-
-export { createQQAdapter } from './factory.js';
 
 export type {
   QQAdapterConfig,

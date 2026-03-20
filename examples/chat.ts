@@ -1,14 +1,15 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 
-import { type Message, Chat, emoji, paragraph, root, stringifyMarkdown, text } from 'chat';
+import { type Message, Chat, emoji, stringifyMarkdown } from 'chat';
 
+import { createQQAdapter } from '../packages/chat-adapter-qq/src/index.js';
 import { createSqliteState } from '../packages/chat-adapter-sqlite/src/index.js';
-import { createQQAdapter, at, reply } from '../packages/chat-adapter-qq/src/index.js';
 
 process.on('uncaughtException', (error) => {
   console.error('uncaughtException', error);
 });
+
 process.on('unhandledRejection', (reason) => {
   console.error('unhandledRejection', reason);
 });
@@ -57,10 +58,8 @@ bot.onSubscribedMessage(async (thread, message) => {
   // });
 
   await thread.post({
-    ast: root([
-      reply(message.id),
-      paragraph([at(message.author.userId), text(' '), text('测试回复')])
-    ])
+    reply: message.id,
+    markdown: `@${message.author.userId} ${message.text}`
   });
 
   await writeMessage(message);

@@ -11,7 +11,7 @@ import { type NodeSegment, type SendMessageSegment, Structs } from 'node-napcat-
 
 import { isHttpUrl } from './utils.js';
 import { extractMedia, toFileSegments } from './file.js';
-import { isQQAtNode, isQQForwardNode, isQQReplyNode } from './ast.js';
+import { forward, reply, isQQAtNode, isQQForwardNode, isQQReplyNode } from './ast.js';
 
 // ---------------------------------------------------------------------------
 // AST → SendMessageSegment[] conversion
@@ -248,6 +248,57 @@ function normalizeRootChildren(root: Root): { children: AnyNode[]; hasLeadingRep
   };
 }
 
+function normalizeReplyId(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function normalizeForwardIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.map((id) => (typeof id === 'string' ? id : '')).filter((id) => id.length > 0);
+}
+
+function getOutgoingMessageMetadata(message: AdapterPostableMessage): {
+  replyId?: string;
+  forwardIds: string[];
+} {
+  if (typeof message === 'string' || isCardElement(message) || 'raw' in message) {
+    return { forwardIds: [] };
+  }
+
+  return {
+    replyId: normalizeReplyId(message.reply),
+    forwardIds: normalizeForwardIds(message.forward)
+  };
+}
+
+function applyOutgoingMessageMetadata(
+  root: Root,
+  message: AdapterPostableMessage,
+  logger?: Logger
+): Root {
+  const { replyId, forwardIds } = getOutgoingMessageMetadata(message);
+  if (forwardIds.length > 0) {
+    if (replyId || root.children.length > 0) {
+      logger?.warn('Forward metadata ignores reply and body content');
+    }
+
+    return {
+      ...root,
+      children: [forward(...forwardIds)]
+    };
+  }
+
+  if (!replyId) {
+    return root;
+  }
+
+  return {
+    ...root,
+    children: [reply(replyId), ...root.children]
+  };
+}
+
 function visitTopLevelNode(builder: SegmentBuilder, node: AnyNode): void {
   if (isQQReplyNode(node)) {
     builder.pushSegment(Structs.reply(node.data.id));
@@ -306,7 +357,7 @@ function cardToFallbackText(card: CardElement): string {
  *
  * Raw messages return `null` — they bypass the AST pipeline entirely.
  */
-function messageToAst(message: AdapterPostableMessage): Root | null {
+function messageToAst(message: AdapterPostableMessage, logger?: Logger): Root | null {
   if (typeof message === 'string') {
     return parseMarkdown(message);
   }
@@ -320,16 +371,16 @@ function messageToAst(message: AdapterPostableMessage): Root | null {
   }
 
   if ('markdown' in message) {
-    return parseMarkdown(message.markdown);
+    return applyOutgoingMessageMetadata(parseMarkdown(message.markdown), message, logger);
   }
 
   if ('ast' in message) {
-    return structuredClone(message.ast);
+    return applyOutgoingMessageMetadata(structuredClone(message.ast), message, logger);
   }
 
   if ('card' in message) {
     const text = message.fallbackText || cardToFallbackText(message.card);
-    return parseMarkdown(text);
+    return applyOutgoingMessageMetadata(parseMarkdown(text), message, logger);
   }
 
   return null;
@@ -353,7 +404,7 @@ export async function renderOutgoingSegments(
   message: AdapterPostableMessage,
   logger?: Logger
 ): Promise<SegmentBuilder> {
-  const ast = messageToAst(message);
+  const ast = messageToAst(message, logger);
 
   let builder: SegmentBuilder;
   if (ast) {

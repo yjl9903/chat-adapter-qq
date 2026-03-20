@@ -120,6 +120,57 @@ describe('QQ adapter messaging APIs', () => {
     `);
   });
 
+  it('supports reply metadata on markdown messages', async () => {
+    const ctx = await createQQTestContext();
+
+    await ctx.adapter.postMessage('qq:group:30003', {
+      markdown: 'hello',
+      reply: '42'
+    });
+
+    expect(ctx.client.sentGroupMessages[0].message).toEqual([
+      { type: 'reply', data: { id: '42' } },
+      { type: 'text', data: { text: 'hello' } }
+    ]);
+  });
+
+  it('uses send_forward_msg for forward metadata on markdown messages', async () => {
+    const ctx = await createQQTestContext();
+
+    await ctx.adapter.postMessage('qq:group:30003', {
+      markdown: '',
+      forward: ['123', '456']
+    });
+
+    expect({
+      forward: ctx.client.sentForwardMessages,
+      group: ctx.client.sentGroupMessages
+    }).toMatchInlineSnapshot(`
+      {
+        "forward": [
+          {
+            "group_id": 30003,
+            "message": [
+              {
+                "data": {
+                  "id": "123",
+                },
+                "type": "node",
+              },
+              {
+                "data": {
+                  "id": "456",
+                },
+                "type": "node",
+              },
+            ],
+          },
+        ],
+        "group": [],
+      }
+    `);
+  });
+
   it('preserves space fallback for empty text-only messages (backward compat)', async () => {
     const ctx = await createQQTestContext();
 

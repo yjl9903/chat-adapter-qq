@@ -111,3 +111,27 @@ export interface QQAdapterConfig {
   /** 自定义 logger；未传时使用 Chat SDK 提供的 logger。 */
   logger?: Logger;
 }
+
+// 扩展 chat 原有的消息类型
+declare module 'chat' {
+  interface PostableMarkdown {
+    /** QQ reply target message id. */
+    reply?: string;
+    /** QQ forward target message ids. */
+    forward?: string[];
+  }
+
+  interface PostableAst {
+    /** QQ reply target message id. */
+    reply?: string;
+    /** QQ forward target message ids. */
+    forward?: string[];
+  }
+
+  interface PostableCard {
+    /** QQ reply target message id. */
+    reply?: string;
+    /** QQ forward target message ids. */
+    forward?: string[];
+  }
+}
