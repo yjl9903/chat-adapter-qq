@@ -57,7 +57,7 @@ importers:
         version: 4.20.2
       isomorphic-ws:
         specifier: ^5.0.0
-        version: 5.0.0(ws@8.19.0)
+        version: 5.0.0(ws@8.20.0)
       lru-cache:
         specifier: ^11.2.7
         version: 11.2.7
@@ -65,8 +65,8 @@ importers:
         specifier: ^5.1.7
         version: 5.1.7
       ws:
-        specifier: ^8.19.0
-        version: 8.19.0
+        specifier: ^8.20.0
+        version: 8.20.0
     devDependencies:
       '@chat-adapter/state-memory':
         specifier: ^4.20.2
@@ -1387,8 +1387,8 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
-  ws@8.19.0:
-    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
+  ws@8.20.0:
+    resolution: {integrity: sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -1943,9 +1943,9 @@ snapshots:
 
   is-plain-obj@4.1.0: {}
 
-  isomorphic-ws@5.0.0(ws@8.19.0):
+  isomorphic-ws@5.0.0(ws@8.20.0):
     dependencies:
-      ws: 8.19.0
+      ws: 8.20.0
 
   jiti@2.6.1: {}
 
@@ -2325,9 +2325,9 @@ snapshots:
 
   node-napcat-ts@0.4.23(patch_hash=bd08fb7db8bf2dde87babbc120e3157023518c4005d762a242e46e3ce5a0a79e):
     dependencies:
-      isomorphic-ws: 5.0.0(ws@8.19.0)
+      isomorphic-ws: 5.0.0(ws@8.20.0)
       nanoid: 5.1.7
-      ws: 8.19.0
+      ws: 8.20.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -2697,7 +2697,7 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  ws@8.19.0: {}
+  ws@8.20.0: {}
 
   yaml@2.8.2: {}
 
