@@ -1,132 +1,68 @@
 import {
   type AdapterPostableMessage,
   type Root,
-  type Attachment,
   type Logger,
   BaseFormatConverter,
   parseMarkdown,
   stringifyMarkdown
 } from 'chat';
-import type { Receive } from 'node-napcat-ts';
 
-import type { QQNapcatClient, QQRawMessage } from '../types.js';
+import type { QQNapcatClient, QQRawMessage, QQThreadId } from '../types.js';
+import { toThreadId } from '../utils.js';
 
-import { toPlainTextPreserveBreaks } from './to-plain-text.js';
-import { isHttpUrl, parseSize, basename } from './utils.js';
-import { type SegmentBuilder, renderOutgoingSegments } from './outgoing.js';
+import {
+  type QQIncomingParseOptions,
+  type QQParsedIncomingMessage,
+  QQIncomingMessageParser
+} from './incoming.js';
+import {
+  type QQOutgoingRenderOptions,
+  type SegmentBuilder,
+  QQOutgoingMessageRenderer
+} from './outgoing.js';
 
-/** NapCat 入站 message segment 的联合类型。 */
-export type QQMessageSegment = Receive[keyof Receive];
+export type { QQMessageSegment, QQParsedIncomingMessage } from './incoming.js';
 
-export interface QQParsedIncomingMessage {
-  markdown: string;
-  formatted: Root;
-  text: string;
-  attachments: Attachment[];
-}
-
-const FILTERED_SEGMENT_TYPES = new Set(['rps', 'poke', 'shake']);
-
-function isFilteredSegment(segment: QQMessageSegment): boolean {
-  return FILTERED_SEGMENT_TYPES.has(segment.type);
-}
-
-function escapeMarkdownLabel(value: string): string {
-  return value.replace(/[[\]\\]/g, '\\$&');
-}
-
-function toMarkdownLink(label: string, url: string): string {
-  return `[${escapeMarkdownLabel(label)}](${url})`;
-}
-
-function asOwnLine(content: string): string {
-  return `\n${content}\n`;
-}
-
-function toReplyPlaceholder(messageId: string): string {
-  return `\n\n> 回复消息 #${messageId}\n\n`;
-}
-
-function toForwardPlaceholder(forwardId: string): string {
-  return `\n\n> 转发消息 #${forwardId}\n\n`;
-}
-
-function toReplyQuoteMarkdown(
-  authorName: string,
-  authorId: string,
-  messageBodyMarkdown: string
-): string {
-  const normalizedAuthor = authorName.trim() || '未知发送人';
-  const header = `${normalizedAuthor} (qq ${authorId}):`;
-  const normalizedBody = messageBodyMarkdown.replace(/\r\n?/g, '\n');
-  const rawLines = normalizedBody.split('\n').map((line) => line.trimEnd());
-
-  // Keep internal empty lines, but trim leading/trailing empty rows.
-  while (rawLines.length > 0 && rawLines[0] === '') {
-    rawLines.shift();
-  }
-  while (rawLines.length > 0 && rawLines[rawLines.length - 1] === '') {
-    rawLines.pop();
-  }
-
-  if (rawLines.length === 0) {
-    return `\n\n> ${header}\n\n`;
-  }
-
-  const quoteLines = [header, ...rawLines].map((line) => (line.length > 0 ? `> ${line}` : '>'));
-
-  return `\n\n${quoteLines.join('\n')}\n\n`;
-}
-
-function attachmentFromSegment(segment: QQMessageSegment): Attachment | null {
-  if (segment.type === 'image') {
-    const fileName = basename(segment.data.file, 'image');
-    const size = 'file_size' in segment.data ? parseSize(segment.data.file_size) : undefined;
-
-    return {
-      type: 'image',
-      name: fileName,
-      url: segment.data.url,
-      size
-    };
-  }
-
-  if (segment.type === 'file') {
-    return {
-      type: 'file',
-      name: basename(segment.data.file, 'file'),
-      size: parseSize(segment.data.file_size)
-    };
-  }
-
-  if (segment.type === 'video') {
-    return {
-      type: 'video',
-      name: basename(segment.data.file, 'video'),
-      url: segment.data.url,
-      size: parseSize(segment.data.file_size)
-    };
-  }
-
-  if (segment.type === 'record') {
-    return {
-      type: 'audio',
-      name: basename(segment.data.file, 'audio'),
-      size: parseSize(segment.data.file_size)
-    };
+function normalizeMentionLabel(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (normalized) {
+      return normalized;
+    }
   }
 
   return null;
 }
 
+function toPositiveInteger(value: string): number | null {
+  const numericValue = Number(value);
+  return Number.isInteger(numericValue) && numericValue > 0 ? numericValue : null;
+}
+
 export class QQFormatConverter extends BaseFormatConverter {
   private readonly client?: QQNapcatClient;
-  private readonly logger?: Logger;
+
+  private readonly parser: QQIncomingMessageParser;
+
+  private readonly renderer: QQOutgoingMessageRenderer;
+
+  private readonly pendingMentionLabelLookups = new Map<string, Promise<string | null>>();
 
   public constructor(client?: QQNapcatClient, logger?: Logger) {
     super();
     this.client = client;
-    this.logger = logger;
+
+    this.parser = new QQIncomingMessageParser({
+      client,
+      converter: this,
+      toAst: (platformText) => this.toAst(platformText)
+    });
+
+    this.renderer = new QQOutgoingMessageRenderer({
+      converter: this,
+      logger,
+      toAst: (platformText) => this.toAst(platformText)
+    });
   }
 
   public toAst(platformText: string): Root {
@@ -137,237 +73,163 @@ export class QQFormatConverter extends BaseFormatConverter {
     return stringifyMarkdown(ast);
   }
 
-  /** Convert an AdapterPostableMessage to NapCat outgoing segments. */
-  public async renderOutgoing(message: AdapterPostableMessage): Promise<SegmentBuilder> {
-    return renderOutgoingSegments(message, this.logger);
-  }
-
-  public parseIncomingSync(raw: QQRawMessage): QQParsedIncomingMessage {
-    return this.processSegments(raw, (segment) => this.segmentToMarkdown(segment));
+  public parseIncomingSync(
+    raw: QQRawMessage,
+    options: QQIncomingParseOptions
+  ): QQParsedIncomingMessage {
+    return this.parser.parseSync(raw, options);
   }
 
   /** 将 NapCat raw message 转为 markdown / ast / text / attachments。 */
-  public async parseIncoming(raw: QQRawMessage): Promise<QQParsedIncomingMessage> {
-    const segments = raw.message;
-    const activeSegments = segments.filter((segment) => !isFilteredSegment(segment));
-
-    // Forward-only messages: expand the entire forward content.
-    if (activeSegments.length === 1 && activeSegments[0].type === 'forward') {
-      const markdown = await this.fetchForwardMessage(raw.message_id, activeSegments[0].data.id);
-      return this.finalizeParsedMessage(raw, segments, markdown ? [markdown] : [], []);
-    }
-
-    // Resolve reply segments asynchronously; all others use sync conversion.
-    let activeIndex = 0;
-    return this.processSegments(raw, (segment) => {
-      const idx = activeIndex++;
-      // Assumption: reply only appears at the beginning of a message.
-      if (segment.type === 'reply' && idx === 0) {
-        return this.fetchReplyMessage(segment.data.id);
-      }
-      return this.segmentToMarkdown(segment);
-    });
+  public async parseIncoming(
+    raw: QQRawMessage,
+    options: QQIncomingParseOptions
+  ): Promise<QQParsedIncomingMessage> {
+    return this.parser.parse(raw, options);
   }
 
-  /**
-   * Shared segment processing: iterates segments, collects markdown parts and
-   * attachments via a caller-supplied converter that may return sync or async.
-   */
-  private processSegments(
-    raw: QQRawMessage,
-    convert: (segment: QQMessageSegment) => string | Promise<string>
-  ): QQParsedIncomingMessage;
-  private processSegments(
-    raw: QQRawMessage,
-    convert: (segment: QQMessageSegment) => Promise<string>
-  ): Promise<QQParsedIncomingMessage>;
-  private processSegments(
-    raw: QQRawMessage,
-    convert: (segment: QQMessageSegment) => string | Promise<string>
-  ): QQParsedIncomingMessage | Promise<QQParsedIncomingMessage> {
-    const segments = raw.message;
-    const markdownParts: (string | Promise<string>)[] = [];
-    const attachments: Attachment[] = [];
-    let hasAsync = false;
+  /** Convert an AdapterPostableMessage to NapCat outgoing segments. */
+  public async renderOutgoing(
+    message: AdapterPostableMessage,
+    options: QQOutgoingRenderOptions
+  ): Promise<SegmentBuilder> {
+    return this.renderer.render(message, options);
+  }
 
-    for (const segment of segments) {
-      if (isFilteredSegment(segment)) continue;
-
-      const markdown = convert(segment);
-      if (markdown instanceof Promise) hasAsync = true;
-      markdownParts.push(markdown);
-
-      const attachment = attachmentFromSegment(segment);
-      if (attachment) attachments.push(attachment);
+  public resolveMentionLabel(
+    target: QQRawMessage,
+    userId: string,
+    fallbackLabel?: string | null
+  ): Promise<string | null>;
+  public resolveMentionLabel(
+    target: QQThreadId,
+    userId: string,
+    fallbackLabel?: string | null
+  ): Promise<string | null>;
+  public async resolveMentionLabel(
+    target: QQRawMessage | QQThreadId,
+    userId: string,
+    fallbackLabel?: string | null
+  ): Promise<string | null> {
+    const normalizedFallback = (fallbackLabel ?? '').trim();
+    if (normalizedFallback) {
+      return normalizedFallback;
     }
 
-    if (!hasAsync) {
-      const resolved = (markdownParts as string[]).filter((part) => part.length > 0);
-      return this.finalizeParsedMessage(raw, segments, resolved, attachments);
+    return this.lookupMentionLabel(this.getMentionLookupThread(target), userId);
+  }
+
+  private getMentionLookupThread(target: QQRawMessage | QQThreadId): QQThreadId {
+    return 'peerId' in target ? target : toThreadId(target);
+  }
+
+  private async lookupMentionLabel(thread: QQThreadId, userId: string): Promise<string | null> {
+    const cacheKey = `${thread.chatType}:${thread.peerId}:${userId}`;
+    const cached = this.pendingMentionLabelLookups.get(cacheKey);
+    if (cached) {
+      return cached;
     }
 
-    return Promise.all(markdownParts).then((resolved) =>
-      this.finalizeParsedMessage(
-        raw,
-        segments,
-        resolved.filter((part) => part.length > 0),
-        attachments
-      )
+    const promise = this.queryMentionLabel(thread, userId)
+      .catch(() => null)
+      .finally(() => {
+        this.pendingMentionLabelLookups.delete(cacheKey);
+      });
+
+    this.pendingMentionLabelLookups.set(cacheKey, promise);
+    return promise;
+  }
+
+  private async queryMentionLabel(thread: QQThreadId, userId: string): Promise<string | null> {
+    const client = this.client;
+    if (!client) {
+      return null;
+    }
+
+    const numericUserId = toPositiveInteger(userId);
+    if (numericUserId === null) {
+      return null;
+    }
+
+    return (
+      (await this.fetchGroupMentionLabel(client, thread, numericUserId, userId)) ??
+      (await this.fetchLoginMentionLabel(client, numericUserId, userId)) ??
+      (await this.fetchFriendMentionLabel(client, numericUserId, userId)) ??
+      (await this.fetchStrangerMentionLabel(client, numericUserId, userId))
     );
   }
 
-  private async fetchReplyMessage(messageId: string): Promise<string> {
-    const client = this.client;
-    if (!client) {
-      return toReplyPlaceholder(messageId);
+  private async fetchGroupMentionLabel(
+    client: QQNapcatClient,
+    thread: QQThreadId,
+    numericUserId: number,
+    userId: string
+  ): Promise<string | null> {
+    if (thread.chatType !== 'group') {
+      return null;
     }
 
-    const numericMessageId = Number(messageId);
-    if (!Number.isInteger(numericMessageId) || numericMessageId <= 0) {
-      return toReplyPlaceholder(messageId);
-    }
-
-    try {
-      const replyMessage = await client.get_msg({
-        message_id: numericMessageId
-      });
-
-      const authorName =
-        replyMessage.sender.card || replyMessage.sender.nickname || String(replyMessage.user_id);
-      const authorId = String(replyMessage.user_id);
-
-      const bodyMarkdown = this.parseIncomingSync(replyMessage).markdown;
-      if (!bodyMarkdown.trim()) {
-        return toReplyPlaceholder(messageId);
-      }
-
-      return toReplyQuoteMarkdown(authorName, authorId, bodyMarkdown);
-    } catch {
-      return toReplyPlaceholder(messageId);
-    }
-  }
-
-  private async fetchForwardMessage(messageId: number, forwardId: string): Promise<string> {
-    const client = this.client;
-    if (!client) {
-      return toForwardPlaceholder(forwardId);
+    const numericPeerId = toPositiveInteger(thread.peerId);
+    if (numericPeerId === null) {
+      return null;
     }
 
     try {
-      const expandedMessage = await client.get_msg({
-        message_id: messageId
+      const member = await client.get_group_member_info({
+        group_id: numericPeerId,
+        user_id: numericUserId
       });
-      const expandedMarkdown = this.parseIncomingSync(expandedMessage).markdown;
-
-      if (!expandedMarkdown.trim()) {
-        return toForwardPlaceholder(forwardId);
-      }
-
-      return expandedMarkdown;
+      return normalizeMentionLabel(member.card, member.nickname) ?? userId;
     } catch {
-      return toForwardPlaceholder(forwardId);
+      return null;
     }
   }
 
-  private segmentToMarkdown(segment: QQMessageSegment): string {
-    if (segment.type === 'text') {
-      return segment.data.text;
-    }
-
-    if (segment.type === 'at') {
-      return segment.data.qq === 'all' ? '@所有人 ' : `@${segment.data.qq} `;
-    }
-
-    if (segment.type === 'face') {
-      return `表情:${segment.data.id} `;
-    }
-
-    if (segment.type === 'image') {
-      const alt = basename(segment.data.file, 'image');
-      if (isHttpUrl(segment.data.url)) {
-        return asOwnLine(`![${escapeMarkdownLabel(alt)}](${segment.data.url})`);
-      }
-      return asOwnLine(`图片:${alt}`);
-    }
-
-    if (segment.type === 'file') {
-      const label = basename(segment.data.file, 'file');
-      if (isHttpUrl(segment.data.file)) {
-        return asOwnLine(toMarkdownLink(label, segment.data.file));
-      }
-      return asOwnLine(`附件:${label}`);
-    }
-
-    if (segment.type === 'video') {
-      const label = basename(segment.data.file, 'video');
-      const url = isHttpUrl(segment.data.url)
-        ? segment.data.url
-        : isHttpUrl(segment.data.file)
-          ? segment.data.file
-          : undefined;
-      if (url) {
-        return asOwnLine(toMarkdownLink(label, url));
-      }
-      return asOwnLine(`视频:${label}`);
-    }
-
-    if (segment.type === 'record') {
-      const label = basename(segment.data.file, 'audio');
-      if (isHttpUrl(segment.data.file)) {
-        return asOwnLine(toMarkdownLink(label, segment.data.file));
-      }
-      return asOwnLine(`音频:${label}`);
-    }
-
-    if (segment.type === 'reply') {
-      return toReplyPlaceholder(segment.data.id);
-    }
-
-    if (segment.type === 'forward') {
-      const data = segment.data as { id: string; content?: QQRawMessage[] };
-      if (Array.isArray(data.content) && data.content.length > 0) {
-        try {
-          const expanded = data.content
-            .map((raw) => {
-              const authorName = raw.sender.card || raw.sender.nickname || String(raw.user_id);
-              const authorId = String(raw.user_id);
-              const bodyMarkdown = this.parseIncomingSync(raw).markdown;
-              return toReplyQuoteMarkdown(authorName, authorId, bodyMarkdown);
-            })
-            .join('');
-
-          return expanded.trim().length > 0 ? expanded : toForwardPlaceholder(data.id);
-        } catch {
-          // ignore error for now
-        }
+  private async fetchLoginMentionLabel(
+    client: QQNapcatClient,
+    numericUserId: number,
+    userId: string
+  ): Promise<string | null> {
+    try {
+      const login = await client.get_login_info();
+      if (login.user_id !== numericUserId) {
+        return null;
       }
 
-      return toForwardPlaceholder(segment.data.id);
+      return normalizeMentionLabel(login.nickname) ?? userId;
+    } catch {
+      return null;
     }
-
-    if (segment.type === 'markdown') {
-      return segment.data.content;
-    }
-
-    return '';
   }
 
-  private finalizeParsedMessage(
-    raw: QQRawMessage,
-    segments: QQMessageSegment[],
-    markdownParts: string[],
-    attachments: Attachment[]
-  ): QQParsedIncomingMessage {
-    const fromSegments = markdownParts.join('').trim();
-    const markdown =
-      fromSegments || (segments.length === 0 && raw.raw_message ? raw.raw_message : '');
-    const formatted = this.toAst(markdown);
+  private async fetchFriendMentionLabel(
+    client: QQNapcatClient,
+    numericUserId: number,
+    userId: string
+  ): Promise<string | null> {
+    try {
+      const friends = await client.get_friend_list();
+      const friend = friends.find((item) => item.user_id === numericUserId);
+      if (!friend) {
+        return null;
+      }
 
-    return {
-      markdown,
-      formatted,
-      text: toPlainTextPreserveBreaks(formatted),
-      attachments
-    };
+      return normalizeMentionLabel(friend.remark, friend.nickname) ?? userId;
+    } catch {
+      return null;
+    }
+  }
+
+  private async fetchStrangerMentionLabel(
+    client: QQNapcatClient,
+    numericUserId: number,
+    userId: string
+  ): Promise<string | null> {
+    try {
+      const stranger = await client.get_stranger_info({ user_id: numericUserId });
+      return normalizeMentionLabel(stranger.remark, stranger.nickname, stranger.nick) ?? userId;
+    } catch {
+      return null;
+    }
   }
 }

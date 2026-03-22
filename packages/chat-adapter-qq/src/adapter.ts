@@ -89,7 +89,6 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
   public constructor(config: QQAdapterConfig) {
     this.config = config;
     this.userName = '';
-    this.converter = new QQFormatConverter();
     this.logger = config.logger ?? {
       child: () => this.logger,
       debug: () => {},
@@ -97,6 +96,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
       warn: () => {},
       error: () => {}
     };
+    this.converter = new QQFormatConverter(undefined, this.logger);
   }
 
   /**
@@ -224,7 +224,10 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     const parsed = this.decodeThreadId(threadId);
     const peerId = toNumberId(parsed.peerId, 'peerId');
 
-    const outgoing = await this.converter.renderOutgoing(message);
+    const outgoing = await this.converter.renderOutgoing(message, {
+      chatType: parsed.chatType,
+      peerId: parsed.peerId
+    });
     const forwardNodes = outgoing.toForwardNodeSegments();
 
     this.logger.debug('post message', parsed.chatType, parsed.peerId, forwardNodes ?? outgoing);
@@ -575,12 +578,20 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
   /** 将 NapCat 原始消息转换为 Chat SDK 标准 Message。 */
   public parseMessage(raw: QQRawMessage): Message<QQRawMessage> {
-    return this.toMessage(raw, this.converter.parseIncomingSync(raw), undefined);
+    return this.toMessage(
+      raw,
+      this.converter.parseIncomingSync(raw, {
+        plainMentionText: raw.message_type === 'private'
+      }),
+      undefined
+    );
   }
 
   /** 将 NapCat 原始消息转换为 Chat SDK Message，并按线程成员信息修正 author。 */
   public async parseThreadMessage(raw: QQRawMessage): Promise<Message<QQRawMessage>> {
-    const parsed = await this.converter.parseIncoming(raw);
+    const parsed = await this.converter.parseIncoming(raw, {
+      plainMentionText: raw.message_type === 'private'
+    });
     const threadId = this.encodeThreadId(toThreadId(raw));
     const userId = String(raw.user_id);
 

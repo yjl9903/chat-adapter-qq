@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { createGroupMessage } from './napcat-mock.js';
+import { createGroupMemberInfo, createGroupMessage } from './napcat-mock.js';
 import { createQQTestContext, flush, waitFor } from './test-context.js';
 
 describe('QQ adapter integration flow', () => {
@@ -14,6 +14,20 @@ describe('QQ adapter integration flow', () => {
         await thread.post(`Echo: ${message.text}`);
       }
     });
+
+    ctx.client.setGroupMembers(30003, [
+      createGroupMemberInfo({
+        groupId: 30003,
+        userId: 10001,
+        nickname: 'qq-bot',
+        isRobot: true
+      }),
+      createGroupMemberInfo({
+        groupId: 30003,
+        userId: 20002,
+        nickname: 'alice'
+      })
+    ]);
 
     await ctx.sendGroup(
       createGroupMessage(
@@ -38,7 +52,7 @@ describe('QQ adapter integration flow', () => {
     }).toMatchInlineSnapshot(`
       {
         "followUpText": "follow up",
-        "mentionText": "hi @10001",
+        "mentionText": "hi @qq-bot{qq:10001}",
         "sentGroupCount": 2,
       }
     `);

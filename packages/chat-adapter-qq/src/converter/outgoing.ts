@@ -9,15 +9,23 @@ import {
 } from 'chat';
 import { type NodeSegment, type SendMessageSegment, Structs } from 'node-napcat-ts';
 
+import type { QQChatType } from '../types.js';
+
+import type { QQFormatConverter } from './index.js';
+
 import { isHttpUrl } from './utils.js';
 import { extractMedia, toFileSegments } from './file.js';
+import {
+  extractQQMentionTokenLabel,
+  formatQQPlainMentionText,
+  parseQQMentionToken
+} from './mention.js';
 import { forward, reply, isQQAtNode, isQQForwardNode, isQQReplyNode } from './ast.js';
 
 // ---------------------------------------------------------------------------
 // AST → SendMessageSegment[] conversion
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyNode = any;
 
 /**
@@ -98,136 +106,8 @@ function hasChildren(node: AnyNode): node is AnyNode & { children: AnyNode[] } {
   return 'children' in node && Array.isArray(node.children);
 }
 
-/** Parse `@\d+` mentions in a text value into text + at segments. */
-function pushTextWithMentions(builder: SegmentBuilder, value: string): void {
-  const AT_PATTERN = /@(\d+)/g;
-
-  let lastIndex = 0;
-
-  let match: RegExpExecArray | null;
-  while ((match = AT_PATTERN.exec(value)) !== null) {
-    if (match.index > lastIndex) {
-      builder.pushText(value.slice(lastIndex, match.index));
-    }
-    builder.pushSegment(Structs.at(match[1]));
-    lastIndex = AT_PATTERN.lastIndex;
-  }
-
-  if (lastIndex < value.length) {
-    builder.pushText(value.slice(lastIndex));
-  }
-}
-
-/** Convert an inline AST node to segments. */
-function visitInlineNode(builder: SegmentBuilder, node: AnyNode): void {
-  if (isQQAtNode(node)) {
-    builder.pushSegment(Structs.at(node.data.id));
-    return;
-  }
-
-  if (node.type === 'text') {
-    pushTextWithMentions(builder, node.value);
-    return;
-  }
-
-  if (node.type === 'inlineCode') {
-    builder.pushText(node.value);
-    return;
-  }
-
-  if (node.type === 'image') {
-    if (isHttpUrl(node.url)) {
-      builder.pushSegment(Structs.image(node.url));
-    } else {
-      builder.pushText(node.alt ?? '');
-    }
-    return;
-  }
-
-  if (node.type === 'link') {
-    const label = (node.children as AnyNode[])
-      .map((child: AnyNode) => (child.type === 'text' ? child.value : ''))
-      .join('');
-    builder.pushText(label && label !== node.url ? `${label} (${node.url})` : node.url);
-    return;
-  }
-
-  if (node.type === 'break') {
-    builder.pushText('\n');
-    return;
-  }
-
-  if (hasChildren(node)) {
-    for (const child of node.children) {
-      visitInlineNode(builder, child);
-    }
-    return;
-  }
-}
-
-/** Convert a block-level AST node to segments. */
-function visitBlockNode(builder: SegmentBuilder, node: AnyNode): void {
-  // Reply/forward are only valid as normalized top-level nodes.
-  if (isQQReplyNode(node) || isQQForwardNode(node)) {
-    return;
-  }
-
-  if (isQQAtNode(node)) {
-    builder.pushSegment(Structs.at(node.data.id));
-    return;
-  }
-
-  if (node.type === 'code') {
-    builder.pushText(node.value);
-    return;
-  }
-
-  if (node.type === 'blockquote') {
-    for (const child of node.children) {
-      visitBlockNode(builder, child);
-    }
-    return;
-  }
-
-  if (node.type === 'list') {
-    for (const item of node.children) {
-      builder.pushText('- ');
-      visitBlockNode(builder, item);
-      builder.pushText('\n');
-    }
-    return;
-  }
-
-  if (node.type === 'listItem') {
-    for (const child of node.children) {
-      visitBlockNode(builder, child);
-    }
-    return;
-  }
-
-  if (node.type === 'table') {
-    for (const row of node.children) {
-      const cells: string[] = [];
-      for (const cell of row.children) {
-        cells.push(
-          (cell.children as AnyNode[])
-            .map((c: AnyNode) => (c.type === 'text' ? c.value : ''))
-            .join('')
-        );
-      }
-      builder.pushText(cells.join(' | '));
-      builder.pushText('\n');
-    }
-    return;
-  }
-
-  // Paragraph and other inline containers.
-  if (hasChildren(node)) {
-    for (const child of node.children) {
-      visitInlineNode(builder, child);
-    }
-    return;
-  }
+function textChildrenToString(children: AnyNode[]): string {
+  return children.map((child) => (child.type === 'text' ? child.value : '')).join('');
 }
 
 function normalizeRootChildren(root: Root): { children: AnyNode[]; hasLeadingReply: boolean } {
@@ -299,44 +179,6 @@ function applyOutgoingMessageMetadata(
   };
 }
 
-function visitTopLevelNode(builder: SegmentBuilder, node: AnyNode): void {
-  if (isQQReplyNode(node)) {
-    builder.pushSegment(Structs.reply(node.data.id));
-    return;
-  }
-
-  if (isQQForwardNode(node)) {
-    if (node.data.ids.length === 1) {
-      builder.pushSegment(Structs.forward(Number(node.data.ids[0])));
-    } else if (node.data.ids.length > 1) {
-      builder.setForwardMessageIds(node.data.ids);
-    }
-    return;
-  }
-
-  visitBlockNode(builder, node);
-}
-
-/** Walk a Root AST and produce NapCat message segments. */
-function astToSegments(root: Root): SegmentBuilder {
-  const builder = new SegmentBuilder();
-  const { children, hasLeadingReply } = normalizeRootChildren(root);
-  let hasRenderedTopLevelNode = false;
-  let previousWasLeadingReply = false;
-
-  for (const child of children) {
-    if (hasRenderedTopLevelNode && !previousWasLeadingReply) {
-      builder.pushText('\n');
-    }
-
-    visitTopLevelNode(builder, child);
-    hasRenderedTopLevelNode = true;
-    previousWasLeadingReply = hasLeadingReply && isQQReplyNode(child);
-  }
-
-  return builder.build();
-}
-
 // ---------------------------------------------------------------------------
 // Message → AST
 // ---------------------------------------------------------------------------
@@ -352,84 +194,302 @@ function cardToFallbackText(card: CardElement): string {
   return parts.join('\n');
 }
 
-/**
- * Parse an AdapterPostableMessage to an AST.
- *
- * Raw messages return `null` — they bypass the AST pipeline entirely.
- */
-function messageToAst(message: AdapterPostableMessage, logger?: Logger): Root | null {
-  if (typeof message === 'string') {
-    return parseMarkdown(message);
-  }
+export interface QQOutgoingMessageRendererOptions {
+  converter: QQFormatConverter;
+  logger?: Logger;
+  toAst?: (platformText: string) => Root;
+}
 
-  if (isCardElement(message)) {
-    return parseMarkdown(cardToFallbackText(message as CardElement));
-  }
-
-  if ('raw' in message) {
-    return null;
-  }
-
-  if ('markdown' in message) {
-    return applyOutgoingMessageMetadata(parseMarkdown(message.markdown), message, logger);
-  }
-
-  if ('ast' in message) {
-    return applyOutgoingMessageMetadata(structuredClone(message.ast), message, logger);
-  }
-
-  if ('card' in message) {
-    const text = message.fallbackText || cardToFallbackText(message.card);
-    return applyOutgoingMessageMetadata(parseMarkdown(text), message, logger);
-  }
-
-  return null;
+export interface QQOutgoingRenderOptions {
+  chatType: QQChatType;
+  peerId: string;
 }
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Render an AdapterPostableMessage into NapCat outgoing segments.
- *
- * 1. Parse input to AST (raw messages bypass the AST pipeline).
- * 2. Walk AST to produce segments — images become `Structs.image`,
- *    `@\d+` mentions and custom At nodes become `Structs.at`, custom
- *    Reply/Forward nodes become `Structs.reply`/`Structs.forward`,
- *    everything else becomes text.
- * 3. Append file upload / attachment segments.
- */
-export async function renderOutgoingSegments(
-  message: AdapterPostableMessage,
-  logger?: Logger
-): Promise<SegmentBuilder> {
-  const ast = messageToAst(message, logger);
+export class QQOutgoingMessageRenderer {
+  private readonly converter: QQFormatConverter;
+  private readonly logger?: Logger;
+  private readonly toAst: (platformText: string) => Root;
 
-  let builder: SegmentBuilder;
-  if (ast) {
-    builder = astToSegments(ast);
-  } else {
-    // Raw message — parse @mentions from text, pass through otherwise.
-    const raw = (message as { raw: string }).raw;
-    builder = new SegmentBuilder();
-    pushTextWithMentions(builder, raw);
+  public constructor(options: QQOutgoingMessageRendererOptions) {
+    this.converter = options.converter;
+    this.logger = options.logger;
+    this.toAst = options.toAst ?? parseMarkdown;
   }
 
-  const { files, attachments } = extractMedia(message);
-  const fileSegments = await toFileSegments(files, attachments, logger);
-  if (builder.hasForwardMessageBatch()) {
-    if (fileSegments.length > 0) {
-      logger?.warn('Forward batches ignore file and attachment segments');
+  /**
+   * Render an AdapterPostableMessage into NapCat outgoing segments.
+   *
+   * 1. Parse input to AST (raw messages bypass the AST pipeline).
+   * 2. Walk AST to produce segments — images become `Structs.image`,
+   *    `@\d+` / `@name{qq:id}` mentions and custom At nodes become `Structs.at`, custom
+   *    Reply/Forward nodes become `Structs.reply`/`Structs.forward`,
+   *    everything else becomes text.
+   * 3. Append file upload / attachment segments.
+   */
+  public async render(
+    message: AdapterPostableMessage,
+    options: QQOutgoingRenderOptions
+  ): Promise<SegmentBuilder> {
+    const ast = this.messageToAst(message);
+
+    let builder: SegmentBuilder;
+    if (ast) {
+      builder = await this.astToSegments(ast, options);
+    } else {
+      const raw = (message as { raw: string }).raw;
+      builder = new SegmentBuilder();
+      await this.pushTextWithMentions(builder, raw, options);
     }
+
+    const { files, attachments } = extractMedia(message);
+    const fileSegments = await toFileSegments(files, attachments, this.logger);
+    if (builder.hasForwardMessageBatch()) {
+      if (fileSegments.length > 0) {
+        this.logger?.warn('Forward batches ignore file and attachment segments');
+      }
+      return builder.build();
+    }
+
+    builder.pushSegments(fileSegments);
+    builder.build();
+    if (builder.length === 0) {
+      builder.pushSegment(Structs.text(' '));
+    }
+
     return builder.build();
   }
 
-  builder.pushSegments(fileSegments);
-  builder.build();
-  if (builder.length === 0) {
-    builder.pushSegment(Structs.text(' '));
+  private async pushMention(
+    builder: SegmentBuilder,
+    userId: string,
+    options: QQOutgoingRenderOptions,
+    fallbackLabel?: string | null
+  ): Promise<void> {
+    if (options.chatType !== 'private') {
+      builder.pushSegment(Structs.at(userId));
+      return;
+    }
+
+    builder.pushText(
+      formatQQPlainMentionText(
+        userId,
+        await this.converter.resolveMentionLabel(options, userId, fallbackLabel)
+      )
+    );
   }
 
-  return builder.build();
+  /** Parse mention tokens in a text value into text + at segments. */
+  private async pushTextWithMentions(
+    builder: SegmentBuilder,
+    value: string,
+    options: QQOutgoingRenderOptions
+  ): Promise<void> {
+    let lastIndex = 0;
+    let index = 0;
+
+    while (index < value.length) {
+      const mention = value[index] === '@' ? parseQQMentionToken(value, index) : null;
+      if (!mention) {
+        index += 1;
+        continue;
+      }
+
+      if (index > lastIndex) {
+        builder.pushText(value.slice(lastIndex, index));
+      }
+
+      await this.pushMention(
+        builder,
+        mention.id,
+        options,
+        extractQQMentionTokenLabel(value, index, mention.end, mention.id)
+      );
+
+      index = mention.end;
+      lastIndex = mention.end;
+    }
+
+    if (lastIndex < value.length) {
+      builder.pushText(value.slice(lastIndex));
+    }
+  }
+
+  /** Convert an inline AST node to segments. */
+  private async visitInlineNode(
+    builder: SegmentBuilder,
+    node: AnyNode,
+    options: QQOutgoingRenderOptions
+  ): Promise<void> {
+    if (isQQAtNode(node)) {
+      await this.pushMention(builder, node.data.id, options, node.data.name);
+      return;
+    }
+
+    switch (node.type) {
+      case 'text':
+        await this.pushTextWithMentions(builder, node.value, options);
+        return;
+      case 'inlineCode':
+        builder.pushText(node.value);
+        return;
+      case 'image':
+        if (isHttpUrl(node.url)) {
+          builder.pushSegment(Structs.image(node.url));
+        } else {
+          builder.pushText(node.alt ?? '');
+        }
+        return;
+      case 'link': {
+        const label = textChildrenToString(node.children as AnyNode[]);
+        builder.pushText(label && label !== node.url ? `${label} (${node.url})` : node.url);
+        return;
+      }
+      case 'break':
+        builder.pushText('\n');
+        return;
+      default:
+        if (hasChildren(node)) {
+          for (const child of node.children) {
+            await this.visitInlineNode(builder, child, options);
+          }
+        }
+    }
+  }
+
+  /** Convert a block-level AST node to segments. */
+  private async visitBlockNode(
+    builder: SegmentBuilder,
+    node: AnyNode,
+    options: QQOutgoingRenderOptions
+  ): Promise<void> {
+    if (isQQReplyNode(node) || isQQForwardNode(node)) {
+      return;
+    }
+
+    if (isQQAtNode(node)) {
+      await this.pushMention(builder, node.data.id, options, node.data.name);
+      return;
+    }
+
+    switch (node.type) {
+      case 'code':
+        builder.pushText(node.value);
+        return;
+      case 'blockquote':
+        for (const child of node.children) {
+          await this.visitBlockNode(builder, child, options);
+        }
+        return;
+      case 'list':
+        for (const item of node.children) {
+          builder.pushText('- ');
+          await this.visitBlockNode(builder, item, options);
+          builder.pushText('\n');
+        }
+        return;
+      case 'listItem':
+        for (const child of node.children) {
+          await this.visitBlockNode(builder, child, options);
+        }
+        return;
+      case 'table':
+        for (const row of node.children) {
+          const cells = row.children.map((cell: AnyNode) =>
+            textChildrenToString(cell.children as AnyNode[])
+          );
+          builder.pushText(cells.join(' | '));
+          builder.pushText('\n');
+        }
+        return;
+      default:
+        if (hasChildren(node)) {
+          for (const child of node.children) {
+            await this.visitInlineNode(builder, child, options);
+          }
+        }
+    }
+  }
+
+  private async visitTopLevelNode(
+    builder: SegmentBuilder,
+    node: AnyNode,
+    options: QQOutgoingRenderOptions
+  ): Promise<void> {
+    if (isQQReplyNode(node)) {
+      builder.pushSegment(Structs.reply(node.data.id));
+      return;
+    }
+
+    if (isQQForwardNode(node)) {
+      if (node.data.ids.length === 1) {
+        builder.pushSegment(Structs.forward(Number(node.data.ids[0])));
+      } else if (node.data.ids.length > 1) {
+        builder.setForwardMessageIds(node.data.ids);
+      }
+      return;
+    }
+
+    await this.visitBlockNode(builder, node, options);
+  }
+
+  /** Walk a Root AST and produce NapCat message segments. */
+  private async astToSegments(
+    root: Root,
+    options: QQOutgoingRenderOptions
+  ): Promise<SegmentBuilder> {
+    const builder = new SegmentBuilder();
+    const { children, hasLeadingReply } = normalizeRootChildren(root);
+    let hasRenderedTopLevelNode = false;
+    let previousWasLeadingReply = false;
+
+    for (const child of children) {
+      if (hasRenderedTopLevelNode && !previousWasLeadingReply) {
+        builder.pushText('\n');
+      }
+
+      await this.visitTopLevelNode(builder, child, options);
+      hasRenderedTopLevelNode = true;
+      previousWasLeadingReply = hasLeadingReply && isQQReplyNode(child);
+    }
+
+    return builder.build();
+  }
+
+  /**
+   * Parse an AdapterPostableMessage to an AST.
+   *
+   * Raw messages return `null` — they bypass the AST pipeline entirely.
+   */
+  private messageToAst(message: AdapterPostableMessage): Root | null {
+    if (typeof message === 'string') {
+      return this.toAst(message);
+    }
+
+    if (isCardElement(message)) {
+      return this.toAst(cardToFallbackText(message as CardElement));
+    }
+
+    if ('raw' in message) {
+      return null;
+    }
+
+    if ('markdown' in message) {
+      return applyOutgoingMessageMetadata(this.toAst(message.markdown), message, this.logger);
+    }
+
+    if ('ast' in message) {
+      return applyOutgoingMessageMetadata(structuredClone(message.ast), message, this.logger);
+    }
+
+    if ('card' in message) {
+      const text = message.fallbackText || cardToFallbackText(message.card);
+      return applyOutgoingMessageMetadata(this.toAst(text), message, this.logger);
+    }
+
+    return null;
+  }
 }

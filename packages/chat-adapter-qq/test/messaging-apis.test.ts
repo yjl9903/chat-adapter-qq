@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { type EmojiValue, NotImplementedError, emoji } from 'chat';
 
-import { createQQAdapter, forward } from '../src/index.js';
+import { at, createQQAdapter, forward } from '../src/index.js';
 
-import { createGroupMessage, createPrivateMessage } from './napcat-mock.js';
+import { createFriendInfo, createGroupMessage, createPrivateMessage } from './napcat-mock.js';
 import { createQQTestContext } from './test-context.js';
 
 describe('QQ adapter messaging APIs', () => {
@@ -68,6 +68,40 @@ describe('QQ adapter messaging APIs', () => {
     expect(sent.message[1].data.file).toBe(
       `base64://${Buffer.from('png-data').toString('base64')}`
     );
+  });
+
+  it('keeps private mentions as plain text when posting private messages', async () => {
+    const ctx = await createQQTestContext();
+    ctx.client.setFriendList([createFriendInfo({ userId: 20002, nickname: 'alice' })]);
+
+    await ctx.adapter.postMessage('qq:private:20002', {
+      ast: {
+        type: 'root',
+        children: [
+          {
+            type: 'paragraph',
+            children: [{ type: 'text', value: 'hello ' }, at('20002')]
+          }
+        ]
+      }
+    });
+
+    expect(ctx.client.sentPrivateMessages[0].message).toEqual([
+      { type: 'text', data: { text: 'hello @alice' } }
+    ]);
+  });
+
+  it('resolves private text mention tokens to fetched labels when posting messages', async () => {
+    const ctx = await createQQTestContext();
+    ctx.client.setFriendList([createFriendInfo({ userId: 20002, nickname: 'alice' })]);
+
+    await ctx.adapter.postMessage('qq:private:20002', {
+      markdown: 'hello @20002'
+    });
+
+    expect(ctx.client.sentPrivateMessages[0].message).toEqual([
+      { type: 'text', data: { text: 'hello @alice' } }
+    ]);
   });
 
   it('sends only media segment (no empty text) when markdown is empty with attachments', async () => {

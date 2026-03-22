@@ -11,7 +11,7 @@ export interface QQReplyNode {
 
 export interface QQAtNode {
   type: typeof QQ_AT_TYPE;
-  data: { id: string };
+  data: { id: string; name?: string };
 }
 
 export interface QQForwardNode {
@@ -32,8 +32,8 @@ declare module 'mdast' {
 }
 
 /** Create an @mention AST node that maps to `Structs.at`. */
-export function at(userId: string): QQAtNode {
-  return { type: QQ_AT_TYPE, data: { id: userId } };
+export function at(userId: string, name?: string): QQAtNode {
+  return { type: QQ_AT_TYPE, data: { id: userId, name } };
 }
 
 /** Create a Reply AST node that maps to `Structs.reply`. */

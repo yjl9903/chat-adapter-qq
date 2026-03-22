@@ -3,7 +3,12 @@ import { stringifyMarkdown } from 'chat';
 
 import { createQQAdapter } from '../src/index.js';
 
-import { createGroupMessage } from './napcat-mock.js';
+import {
+  createFriendInfo,
+  createGroupMemberInfo,
+  createGroupMessage,
+  createPrivateMessage
+} from './napcat-mock.js';
 import { createQQTestContext } from './test-context.js';
 
 describe('QQAdapter parseMessage', () => {
@@ -171,6 +176,109 @@ describe('QQAdapter parseMessage', () => {
     expect(message.text).toMatchInlineSnapshot('""');
   });
 
+  it('enriches @mentions with member names in async parse path', async () => {
+    const ctx = await createQQTestContext();
+
+    ctx.client.setGroupMembers(30003, [
+      createGroupMemberInfo({
+        groupId: 30003,
+        userId: 10001,
+        nickname: 'qq-bot',
+        isRobot: true
+      }),
+      createGroupMemberInfo({
+        groupId: 30003,
+        userId: 20002,
+        nickname: 'alice'
+      }),
+      createGroupMemberInfo({
+        groupId: 30003,
+        userId: 20005,
+        nickname: 'bob',
+        card: 'bob-card'
+      })
+    ]);
+
+    const incoming = createGroupMessage(
+      [
+        { type: 'text', data: { text: 'hello ' } },
+        { type: 'at', data: { qq: '10001' } },
+        { type: 'text', data: { text: ' and ' } },
+        { type: 'at', data: { qq: '20005' } }
+      ],
+      { messageId: 905, userId: 20002 }
+    );
+
+    const message = await ctx.adapter.parseThreadMessage(incoming);
+
+    expect({
+      text: message.text,
+      markdown: stringifyMarkdown(message.formatted)
+    }).toMatchInlineSnapshot(`
+      {
+        "markdown": "hello @qq-bot{qq:10001}  and @bob-card{qq:20005}
+      ",
+        "text": "hello @qq-bot{qq:10001}  and @bob-card{qq:20005}",
+      }
+    `);
+  });
+
+  it('keeps private @mentions as plain text in async parse path', async () => {
+    const ctx = await createQQTestContext();
+
+    ctx.client.setFriendList([createFriendInfo({ userId: 20002, nickname: 'alice' })]);
+
+    const incoming = createPrivateMessage(
+      [
+        { type: 'text', data: { text: 'hello ' } },
+        { type: 'at', data: { qq: '20002' } },
+        { type: 'text', data: { text: ' and ' } },
+        { type: 'at', data: { qq: '10001' } }
+      ],
+      { messageId: 906, userId: 20002 }
+    );
+
+    const message = await ctx.adapter.parseThreadMessage(incoming);
+
+    expect({
+      text: message.text,
+      markdown: stringifyMarkdown(message.formatted)
+    }).toMatchInlineSnapshot(`
+      {
+        "markdown": "hello @alice  and @qq-bot
+      ",
+        "text": "hello @alice  and @qq-bot",
+      }
+    `);
+  });
+
+  it('falls back to @qq in private sync parse when no label is available', () => {
+    const adapter = createQQAdapter({
+      napcat: { baseUrl: 'ws://localhost:3001' }
+    });
+
+    const raw = createPrivateMessage(
+      [
+        { type: 'text', data: { text: 'hello ' } },
+        { type: 'at', data: { qq: '10001' } }
+      ],
+      { messageId: 907, userId: 20002 }
+    );
+
+    const message = adapter.parseMessage(raw);
+
+    expect({
+      text: message.text,
+      markdown: stringifyMarkdown(message.formatted)
+    }).toMatchInlineSnapshot(`
+      {
+        "markdown": "hello @10001
+      ",
+        "text": "hello @10001",
+      }
+    `);
+  });
+
   it('resolves reply placeholder to quoted author + multiline body in async parse path', async () => {
     const ctx = await createQQTestContext();
 
@@ -196,14 +304,14 @@ describe('QQAdapter parseMessage', () => {
       markdown: stringifyMarkdown(message.formatted)
     }).toMatchInlineSnapshot(`
       {
-        "markdown": "> alice (qq 20002):
+        "markdown": "> @alice{qq:20002}:
       > quoted line 1
       >
       > quoted line 2
 
       tail
       ",
-        "text": "alice (qq 20002):
+        "text": "@alice{qq:20002}:
       quoted line 1
       quoted line 2
       tail",
@@ -311,19 +419,64 @@ describe('QQAdapter parseMessage', () => {
         "getMsgCalls": [
           920,
         ],
-        "markdown": "> alice (qq 20002):
+        "markdown": "> @alice{qq:20002}:
       > fwd line 1
       >
       > fwd line 2
 
-      > bob-card (qq 20004):
+      > @bob-card{qq:20004}:
       > ![fwd.png](https://example.com/fwd.png)
       ",
-        "text": "alice (qq 20002):
+        "text": "@alice{qq:20002}:
       fwd line 1
       fwd line 2
-      bob-card (qq 20004):
+      @bob-card{qq:20004}:
       fwd.png",
+      }
+    `);
+  });
+
+  it('falls back to placeholder when get_msg returns the same unresolved forward stub', async () => {
+    const ctx = await createQQTestContext();
+
+    ctx.client.setMessage(
+      createGroupMessage([{ type: 'forward', data: { id: 'fw-loop' } }], {
+        messageId: 949,
+        userId: 20003
+      })
+    );
+
+    const incoming = createGroupMessage([{ type: 'forward', data: { id: 'fw-loop' } }], {
+      messageId: 949,
+      userId: 20003
+    });
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const message = await Promise.race([
+      ctx.adapter.parseThreadMessage(incoming).finally(() => {
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+      }),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('parseThreadMessage timed out')), 250);
+      })
+    ]);
+
+    expect({
+      getMsgCalls: ctx.client.getMsgCalls,
+      getForwardMsgCalls: ctx.client.getForwardMsgCalls,
+      markdown: stringifyMarkdown(message.formatted),
+      text: message.text
+    }).toMatchInlineSnapshot(`
+      {
+        "getForwardMsgCalls": [],
+        "getMsgCalls": [
+          949,
+        ],
+        "markdown": "> 转发消息 #fw-loop
+      ",
+        "text": "转发消息 #fw-loop",
       }
     `);
   });
@@ -429,22 +582,22 @@ describe('QQAdapter parseMessage', () => {
         "getMsgCalls": [
           948,
         ],
-        "markdown": "> alice (qq 21001):
+        "markdown": "> @alice{qq:21001}:
       > level-1
 
-      > alice (qq 21002):
+      > @alice{qq:21002}:
       >
-      > > alice (qq 22001):
+      > > @alice{qq:22001}:
       > > level-2
       >
-      > > alice (qq 22002):
+      > > @alice{qq:22002}:
       > >
-      > > > alice (qq 23001):
+      > > > @alice{qq:23001}:
       > > > level-3
       > >
-      > > > alice (qq 23002):
+      > > > @alice{qq:23002}:
       > > >
-      > > > > alice (qq 24001):
+      > > > > @alice{qq:24001}:
       > > > > level-4
       ",
       }

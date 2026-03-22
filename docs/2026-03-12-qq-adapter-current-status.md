@@ -10,7 +10,9 @@ It should be updated when runtime behavior, adapter APIs, or test coverage chang
 ## Key implementation files
 
 - Adapter runtime: `packages/chat-adapter-qq/src/adapter.ts`
-- Inbound converter: `packages/chat-adapter-qq/src/converter/index.ts`
+- Format converter wrapper: `packages/chat-adapter-qq/src/converter/index.ts`
+- Inbound parser: `packages/chat-adapter-qq/src/converter/incoming.ts`
+- Outbound renderer: `packages/chat-adapter-qq/src/converter/outgoing.ts`
 - Member/profile mapping helpers: `packages/chat-adapter-qq/src/utils.ts`
 - Emoji normalization: `packages/chat-adapter-qq/src/emoji.ts`
 - Heartbeat manager: `packages/chat-adapter-qq/src/heartbeat.ts`
@@ -78,9 +80,10 @@ Pipeline:
 Highlights:
 
 - `text`, `at`, `image`, `file`, `video`, `record`, `reply`, `forward`, `markdown` are handled.
+- async `at` parsing prefers `@displayName{qq:userId}` and falls back to `@userId`.
 - `reply`:
   - sync parse: placeholder quote
-  - async parse: resolves via `get_msg` when possible
+  - async parse: resolves via `get_msg` when possible, and quote headers use `@displayName{qq:userId}:`
 - standalone `forward`:
   - async parse resolves current message via `get_msg` and uses expanded content
   - fallback to placeholder on failure

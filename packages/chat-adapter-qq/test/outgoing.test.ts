@@ -3,6 +3,8 @@ import type { AdapterPostableMessage, Logger } from 'chat';
 
 import { QQFormatConverter } from '../src/converter/index.js';
 import { at, forward, reply } from '../src/converter/ast.js';
+import { formatQQMentionToken } from '../src/converter/mention.js';
+import type { QQOutgoingRenderOptions } from '../src/converter/outgoing.js';
 
 function createLogger(): Logger {
   return {
@@ -15,7 +17,14 @@ function createLogger(): Logger {
 }
 
 function converter(logger?: Logger) {
-  return new QQFormatConverter(undefined, logger);
+  const instance = new QQFormatConverter(undefined, logger);
+  return {
+    toAst: instance.toAst.bind(instance),
+    renderOutgoing: (
+      message: AdapterPostableMessage,
+      options: QQOutgoingRenderOptions = { chatType: 'group', peerId: '30003' }
+    ) => instance.renderOutgoing(message, options)
+  };
 }
 
 describe('QQFormatConverter.renderOutgoing', () => {
@@ -75,6 +84,77 @@ describe('QQFormatConverter.renderOutgoing', () => {
     });
 
     expect(Array.from(segments)).toEqual([{ type: 'at', data: { qq: '10001' } }]);
+  });
+
+  it('renders explicit at AST nodes as plain text in private chats', async () => {
+    const segments = await converter().renderOutgoing(
+      {
+        ast: { type: 'root', children: [at('10001')] }
+      },
+      { chatType: 'private', peerId: '20002' }
+    );
+
+    expect(Array.from(segments)).toEqual([{ type: 'text', data: { text: '@10001' } }]);
+  });
+
+  it('prefers explicit at node labels in private chats', async () => {
+    const segments = await converter().renderOutgoing(
+      {
+        ast: { type: 'root', children: [at('10001', 'qq-bot')] }
+      },
+      { chatType: 'private', peerId: '20002' }
+    );
+
+    expect(Array.from(segments)).toEqual([{ type: 'text', data: { text: '@qq-bot' } }]);
+  });
+
+  it('parses @name{qq:id} mention tokens inside markdown text', async () => {
+    const segments = await converter().renderOutgoing({
+      markdown: 'hello @qq-bot{qq:10001} world'
+    });
+
+    expect(Array.from(segments)).toEqual([
+      { type: 'text', data: { text: 'hello ' } },
+      { type: 'at', data: { qq: '10001' } },
+      { type: 'text', data: { text: ' world' } }
+    ]);
+  });
+
+  it('parses formatter output for digit-prefixed display names', async () => {
+    const segments = await converter().renderOutgoing({
+      markdown: `hello ${formatQQMentionToken('20005', '123bot')} world`
+    });
+
+    expect(Array.from(segments)).toEqual([
+      { type: 'text', data: { text: 'hello ' } },
+      { type: 'at', data: { qq: '20005' } },
+      { type: 'text', data: { text: ' world' } }
+    ]);
+  });
+
+  it('parses formatter output for display names containing separator-prefixed @', async () => {
+    const segments = await converter().renderOutgoing({
+      markdown: `hello ${formatQQMentionToken('20005', 'foo @bar')} world`
+    });
+
+    expect(Array.from(segments)).toEqual([
+      { type: 'text', data: { text: 'hello ' } },
+      { type: 'at', data: { qq: '20005' } },
+      { type: 'text', data: { text: ' world' } }
+    ]);
+  });
+
+  it('keeps named mention tokens as plain text in private chats', async () => {
+    const segments = await converter().renderOutgoing(
+      {
+        markdown: `hello ${formatQQMentionToken('20005', 'foo @bar')} world`
+      },
+      { chatType: 'private', peerId: '20005' }
+    );
+
+    expect(Array.from(segments)).toEqual([
+      { type: 'text', data: { text: 'hello @foo @bar world' } }
+    ]);
   });
 
   it('keeps a leading reply as the first segment without adding a newline before the body', async () => {

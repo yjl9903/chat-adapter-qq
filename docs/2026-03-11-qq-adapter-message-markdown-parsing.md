@@ -14,7 +14,8 @@ For full adapter status, see `docs/2026-03-12-qq-adapter-current-status.md`.
 
 ## Main implementation
 
-- converter: `packages/chat-adapter-qq/src/converter/index.ts`
+- format converter wrapper: `packages/chat-adapter-qq/src/converter/index.ts`
+- incoming parser: `packages/chat-adapter-qq/src/converter/incoming.ts`
 - plain-text renderer: `packages/chat-adapter-qq/src/converter/to-plain-text.ts`
 - adapter entry points:
   - sync: `QQAdapter.parseMessage(raw)`
@@ -31,12 +32,16 @@ For full adapter status, see `docs/2026-03-12-qq-adapter-current-status.md`.
 ### Async path (`parseIncoming`)
 
 - supports reply/forward expansion through NapCat `get_msg`
+- resolves `at` labels directly through NapCat client queries when possible
 - used by `parseThreadMessage`, which is the runtime path for inbound dispatch
 
 ## Segment mapping (current)
 
 - `text` -> raw text
-- `at` -> `@{qq}` or `@所有人`
+- `at`
+  - unresolved / sync fallback -> `@10001`
+  - async when member name is available -> `@qq-bot{qq:10001}`
+  - `@all` -> `@所有人`
 - `face` -> `表情:{id}`
 - `image`
   - with URL: markdown image `![name](url)`
@@ -52,7 +57,7 @@ For full adapter status, see `docs/2026-03-12-qq-adapter-current-status.md`.
   - otherwise: fallback label `音频:{name}`
 - `reply`
   - sync: placeholder quote
-  - async (first active segment only): fetch quoted message and render blockquote with author + body
+  - async (first active segment only): fetch quoted message and render blockquote with `@displayName{qq:userId}:` + body
 - `forward`
   - sync: placeholder quote
   - async when standalone message: fetch expanded content via current message `get_msg`
