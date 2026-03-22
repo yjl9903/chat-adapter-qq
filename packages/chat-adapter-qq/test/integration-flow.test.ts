@@ -79,4 +79,86 @@ describe('QQ adapter integration flow', () => {
     await flush();
     expect(mentionCount).toMatchInlineSnapshot('0');
   });
+
+  it('serializes rapid subscribed messages in the same thread', async () => {
+    const started: string[] = [];
+    const finished: string[] = [];
+
+    let releaseFirstMessage!: () => void;
+    const firstMessageGate = new Promise<void>((resolve) => {
+      releaseFirstMessage = resolve;
+    });
+
+    const ctx = await createQQTestContext({
+      onMention: async (thread) => {
+        await thread.subscribe();
+      },
+      onSubscribed: async (_thread, message) => {
+        started.push(message.id);
+
+        if (message.id === '124') {
+          await firstMessageGate;
+        }
+
+        finished.push(message.id);
+      }
+    });
+
+    ctx.client.setGroupMembers(30003, [
+      createGroupMemberInfo({
+        groupId: 30003,
+        userId: 10001,
+        nickname: 'qq-bot',
+        isRobot: true
+      }),
+      createGroupMemberInfo({
+        groupId: 30003,
+        userId: 20002,
+        nickname: 'alice'
+      })
+    ]);
+
+    await ctx.sendGroup(
+      createGroupMessage(
+        [
+          { type: 'text', data: { text: 'hi ' } },
+          { type: 'at', data: { qq: '10001' } }
+        ],
+        { messageId: 123 }
+      )
+    );
+    await waitFor(() => ctx.captured.mentionMessage !== null);
+
+    ctx.client.emitGroup(
+      createGroupMessage([{ type: 'text', data: { text: 'first' } }], { messageId: 124 })
+    );
+    ctx.client.emitGroup(
+      createGroupMessage([{ type: 'text', data: { text: 'second' } }], { messageId: 125 })
+    );
+
+    await flush();
+
+    expect(started).toEqual(['124']);
+    expect(finished).toEqual([]);
+
+    releaseFirstMessage();
+
+    await waitFor(() => finished.length === 2);
+
+    expect({
+      started,
+      finished
+    }).toMatchInlineSnapshot(`
+      {
+        "finished": [
+          "124",
+          "125",
+        ],
+        "started": [
+          "124",
+          "125",
+        ],
+      }
+    `);
+  });
 });

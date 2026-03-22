@@ -33,6 +33,7 @@ import type {
 import { QQFormatConverter, type QQParsedIncomingMessage } from './converter/index.js';
 import { normalizeQQEmojiId } from './emoji.js';
 import { QQNapcatConnectionHeartbeat } from './heartbeat.js';
+import { LinkedQueue } from './linked-queue.js';
 import { CachedNCWebsocket } from './napcat/cached-client.js';
 import {
   isMention,
@@ -84,6 +85,8 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
   private initializing?: Promise<void>;
 
   private heartbeat?: QQNapcatConnectionHeartbeat;
+
+  private readonly incomingMessageQueues = new Map<string, LinkedQueue>();
 
   /** 创建 QQ 适配器实例（不发起连接）。 */
   public constructor(config: QQAdapterConfig) {
@@ -755,7 +758,7 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
    * 统一处理入站消息：
    * - 过滤 bot 自己发送的消息
    * - 计算 threadId 与 mention
-   * - 交给 Chat SDK `processMessage` 进入标准事件流
+   * - 按 thread 串行进入 Chat SDK，避免单进程下自触发线程锁冲突
    */
   private dispatchIncomingMessage(raw: QQRawMessage): void {
     if (!this.chat) {
@@ -768,12 +771,51 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
     const threadId = this.encodeThreadId(toThreadId(raw));
     const mention = isMention(raw, this.selfId);
+    const chat = this.chat;
+    const queue = this.getIncomingMessageQueue(threadId);
 
-    this.chat.processMessage(this, threadId, async () => {
-      const message = await this.parseThreadMessage(raw);
-      message.isMention = mention;
-      return message;
+    // NapCat 可能在单个进程里突发推送同一 thread 的多条消息；这里先按
+    // thread 本地排队，保留 Chat 的分布式锁用于跨实例协调，而不是让同进程
+    // 的 burst 直接互相打掉。
+    queue.enqueue(async () => {
+      try {
+        await new Promise<void>((resolve) => {
+          chat.processMessage(
+            this,
+            threadId,
+            async () => {
+              const message = await this.parseThreadMessage(raw);
+              message.isMention = mention;
+              return message;
+            },
+            {
+              waitUntil: async (task) => {
+                await task;
+                resolve();
+              }
+            }
+          );
+        });
+      } catch (error) {
+        this.logger.error('Queued message dispatch failed', { error, threadId });
+      }
     });
+  }
+
+  private getIncomingMessageQueue(threadId: string): LinkedQueue {
+    let queue = this.incomingMessageQueues.get(threadId);
+    if (queue) {
+      return queue;
+    }
+
+    const newQueue = new LinkedQueue(() => {
+      if (this.incomingMessageQueues.get(threadId) === newQueue && newQueue.isIdle) {
+        this.incomingMessageQueues.delete(threadId);
+      }
+    });
+    this.incomingMessageQueues.set(threadId, newQueue);
+
+    return newQueue;
   }
 
   /** 获取已初始化的 NapCat 客户端，否则抛出配置错误。 */
