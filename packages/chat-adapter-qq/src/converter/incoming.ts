@@ -149,7 +149,11 @@ function attachmentFromSegment(segment: QQMessageSegment): Attachment | null {
       type: 'image',
       name: fileName,
       url: segment.data.url,
-      size
+      size,
+      qq: {
+        kind: 'image',
+        file: segment.data.file
+      }
     };
   }
 
@@ -157,7 +161,12 @@ function attachmentFromSegment(segment: QQMessageSegment): Attachment | null {
     return {
       type: 'file',
       name: basename(segment.data.file, 'file'),
-      size: parseSize(segment.data.file_size)
+      size: parseSize(segment.data.file_size),
+      qq: {
+        kind: 'file',
+        file: segment.data.file,
+        fileId: segment.data.file_id
+      }
     };
   }
 
@@ -166,7 +175,11 @@ function attachmentFromSegment(segment: QQMessageSegment): Attachment | null {
       type: 'video',
       name: basename(segment.data.file, 'video'),
       url: segment.data.url,
-      size: parseSize(segment.data.file_size)
+      size: parseSize(segment.data.file_size),
+      qq: {
+        kind: 'video',
+        file: segment.data.file
+      }
     };
   }
 
@@ -174,7 +187,11 @@ function attachmentFromSegment(segment: QQMessageSegment): Attachment | null {
     return {
       type: 'audio',
       name: basename(segment.data.file, 'audio'),
-      size: parseSize(segment.data.file_size)
+      size: parseSize(segment.data.file_size),
+      qq: {
+        kind: 'record',
+        file: segment.data.file
+      }
     };
   }
 

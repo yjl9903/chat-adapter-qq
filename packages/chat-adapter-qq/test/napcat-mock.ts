@@ -55,6 +55,9 @@ export class MockNapcatClient {
   getGroupMemberInfoCalls: Array<{ group_id: number; user_id: number }> = [];
   getFriendListCalls = 0;
   getStrangerInfoCalls: number[] = [];
+  getImageCalls: string[] = [];
+  getFileCalls: string[] = [];
+  getRecordCalls: string[] = [];
 
   private nextMessageId = 1000;
   private readonly handlers: {
@@ -111,6 +114,18 @@ export class MockNapcatClient {
     }
   >();
   private statusQueue: Array<MockStatusResult | Error> = [];
+  private imageResultByFile = new Map<
+    string,
+    { file: string; url?: string; file_size?: string; file_name?: string; base64?: string }
+  >();
+  private fileResultByFile = new Map<
+    string,
+    { file: string; url?: string; file_size?: string; file_name?: string; base64?: string }
+  >();
+  private recordResultByFile = new Map<
+    string,
+    { file: string; url?: string; file_size?: string; file_name?: string; base64?: string }
+  >();
 
   async connect(): Promise<void> {
     this.connectCalls += 1;
@@ -417,6 +432,57 @@ export class MockNapcatClient {
     );
   }
 
+  async get_image(params: { file: string }): Promise<{
+    file: string;
+    url?: string;
+    file_size?: string;
+    file_name?: string;
+    base64?: string;
+  }> {
+    this.getImageCalls.push(params.file);
+    return (
+      this.imageResultByFile.get(params.file) ?? {
+        file: `/tmp/${params.file}`,
+        url: `https://example.com/image/${encodeURIComponent(params.file)}`,
+        file_name: params.file
+      }
+    );
+  }
+
+  async get_file(params: { file: string }): Promise<{
+    file: string;
+    url?: string;
+    file_size?: string;
+    file_name?: string;
+    base64?: string;
+  }> {
+    this.getFileCalls.push(params.file);
+    return (
+      this.fileResultByFile.get(params.file) ?? {
+        file: `/tmp/${params.file}`,
+        url: `https://example.com/file/${encodeURIComponent(params.file)}`,
+        file_name: params.file
+      }
+    );
+  }
+
+  async get_record(params: { file: string }): Promise<{
+    file: string;
+    url?: string;
+    file_size?: string;
+    file_name?: string;
+    base64?: string;
+  }> {
+    this.getRecordCalls.push(params.file);
+    return (
+      this.recordResultByFile.get(params.file) ?? {
+        file: `/tmp/${params.file}`,
+        url: `https://example.com/record/${encodeURIComponent(params.file)}`,
+        file_name: params.file
+      }
+    );
+  }
+
   async set_input_status(params: {
     user_id: string;
     event_type: number;
@@ -507,6 +573,27 @@ export class MockNapcatClient {
 
   setStatusQueue(statuses: Array<MockStatusResult | Error>): void {
     this.statusQueue = [...statuses];
+  }
+
+  setImageResult(
+    file: string,
+    result: { file: string; url?: string; file_size?: string; file_name?: string; base64?: string }
+  ): void {
+    this.imageResultByFile.set(file, result);
+  }
+
+  setFileResult(
+    file: string,
+    result: { file: string; url?: string; file_size?: string; file_name?: string; base64?: string }
+  ): void {
+    this.fileResultByFile.set(file, result);
+  }
+
+  setRecordResult(
+    file: string,
+    result: { file: string; url?: string; file_size?: string; file_name?: string; base64?: string }
+  ): void {
+    this.recordResultByFile.set(file, result);
   }
 
   private emit<TEvent extends MockNapcatEvent>(

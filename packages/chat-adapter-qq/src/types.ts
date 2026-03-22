@@ -181,8 +181,32 @@ export type QQAdapterEventHandler<T extends QQAdapterEvent> = (
   payload: QQAdapterEventMap[T]
 ) => void | Promise<void>;
 
+/** 可用于向 NapCat 重新获取临时下载地址的 QQ 文件句柄。 */
+export interface QQAttachmentHandle {
+  /**
+   * NapCat 侧的媒体类别。
+   * 注意这里保留 `record`，用于区分 `get_record` 与 `get_file`；
+   * 但对外暴露给 Chat SDK 的 Attachment.type 仍保持 `audio` 语义。
+   */
+  kind: 'image' | 'file' | 'video' | 'record';
+
+  /** NapCat 可识别的文件标识。 */
+  file: string;
+
+  /** 某些文件消息额外提供的稳定 file_id。 */
+  fileId?: string;
+}
+
 // 扩展 chat 原有的消息类型
 declare module 'chat' {
+  interface Attachment {
+    /**
+     * QQ / NapCat 媒体续期句柄。
+     * 用于在临时下载 URL 过期后重新调用 NapCat API 获取新链接。
+     */
+    qq?: QQAttachmentHandle;
+  }
+
   interface PostableMarkdown {
     /** QQ reply target message id. */
     reply?: string;

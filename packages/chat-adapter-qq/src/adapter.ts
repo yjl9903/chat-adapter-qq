@@ -1,14 +1,9 @@
-import type {
-  WSCloseRes,
-  WSConnecting,
-  WSErrorRes,
-  WSOpenRes,
-  WSReconnection
-} from 'node-napcat-ts';
+import type { WSCloseRes, WSConnecting, WSErrorRes, WSOpenRes } from 'node-napcat-ts';
 
 import {
   type Adapter,
   type AdapterPostableMessage,
+  type Attachment,
   type Author,
   type ChannelInfo,
   type ChatInstance,
@@ -38,7 +33,8 @@ import type {
   QQNapcatClient,
   QQPrivateMessage,
   QQRawMessage,
-  QQThreadId
+  QQThreadId,
+  QQAttachmentHandle
 } from './types.js';
 
 import { LinkedQueue } from './linked-queue.js';
@@ -58,6 +54,7 @@ import {
   toSelfMemberProfile,
   toThreadId
 } from './utils.js';
+import { refreshQQAttachment } from './napcat/media.js';
 
 /**
  * Chat SDK QQ 平台适配器（基于 NapCat WebSocket）。
@@ -594,6 +591,18 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
       user_id: parsed.peerId,
       event_type: 1
     });
+  }
+
+  /**
+   * 刷新 QQ 附件的临时下载地址。
+   * - 传入 Attachment 时优先读取 `attachment.qq`
+   * - 传入字符串时必须显式提供 `kind`
+   */
+  public async refreshAttachment(
+    source: Attachment | QQAttachmentHandle | string,
+    kind?: QQAttachmentHandle['kind']
+  ) {
+    return refreshQQAttachment(this.requireClient(), source, kind);
   }
 
   /** 渲染格式化内容到 QQ 文本。 */

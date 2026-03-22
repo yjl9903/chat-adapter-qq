@@ -40,17 +40,23 @@ bot.onNewMention(async (thread, message) => {
 });
 
 bot.onSubscribedMessage(async (thread, message) => {
-  const filename = 'assets/熱烈歓迎にたじたじ.png';
+  console.log('Receive message attachments', message.attachments);
+  for (const attachment of message.attachments) {
+    const resp = await bot.getAdapter('qq').refreshAttachment(attachment);
+    console.log('Refresh attachment', resp);
+  }
 
-  thread.post({
-    markdown: '',
-    files: [
-      {
-        data: await fs.promises.readFile(filename),
-        filename: path.basename(filename)
-      }
-    ]
-  });
+  // const filename = 'assets/熱烈歓迎にたじたじ.png';
+
+  // await thread.post({
+  //   markdown: '',
+  //   files: [
+  //     {
+  //       data: await fs.promises.readFile(filename),
+  //       filename: path.basename(filename)
+  //     }
+  //   ]
+  // });
 });
 
 // await bot.shutdown();

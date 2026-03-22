@@ -44,6 +44,10 @@ describe('QQAdapter parseMessage', () => {
         "attachments": [
           {
             "name": "img.png",
+            "qq": {
+              "file": "img.png",
+              "kind": "image",
+            },
             "size": 1,
             "type": "image",
             "url": "https://example.com/img.png",
@@ -157,6 +161,82 @@ describe('QQAdapter parseMessage', () => {
       附件:archive.zip",
       }
     `);
+  });
+
+  it('preserves QQ refresh handles for image, file, video and record attachments', () => {
+    const adapter = createQQAdapter({
+      napcat: { baseUrl: 'ws://localhost:3001' }
+    });
+
+    const raw = createGroupMessage([
+      {
+        type: 'image',
+        data: {
+          summary: 'img',
+          file: 'cache/image-key',
+          sub_type: 0,
+          url: 'https://example.com/expired',
+          file_size: '1024'
+        }
+      },
+      {
+        type: 'file',
+        data: {
+          file: 'docs/report.pdf',
+          file_id: 'qq-file-id',
+          file_size: '2048'
+        }
+      },
+      {
+        type: 'video',
+        data: {
+          file: 'media/clip.mp4',
+          url: 'https://example.com/clip.mp4',
+          file_size: '512'
+        }
+      },
+      {
+        type: 'record',
+        data: {
+          file: 'media/voice.amr',
+          file_size: '128'
+        }
+      }
+    ]);
+
+    const message = adapter.parseMessage(raw);
+
+    expect(message.attachments).toMatchObject([
+      {
+        type: 'image',
+        qq: {
+          kind: 'image',
+          file: 'cache/image-key'
+        }
+      },
+      {
+        type: 'file',
+        qq: {
+          kind: 'file',
+          file: 'docs/report.pdf',
+          fileId: 'qq-file-id'
+        }
+      },
+      {
+        type: 'video',
+        qq: {
+          kind: 'video',
+          file: 'media/clip.mp4'
+        }
+      },
+      {
+        type: 'audio',
+        qq: {
+          kind: 'record',
+          file: 'media/voice.amr'
+        }
+      }
+    ]);
   });
 
   it('does not fallback to raw_message when all segments are filtered', () => {

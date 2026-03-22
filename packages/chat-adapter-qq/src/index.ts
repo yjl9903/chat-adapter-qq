@@ -34,6 +34,7 @@ export type {
   QQGroupMessage,
   QQHeartbeatConfig,
   QQLoginInfo,
+  QQAttachmentHandle,
   QQMemberProfile,
   QQMemberRaw,
   QQNapcatClient,

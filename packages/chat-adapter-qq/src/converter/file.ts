@@ -8,6 +8,8 @@ import {
 
 import { type SendMessageSegment, Structs } from 'node-napcat-ts';
 
+type QQAttachmentMediaType = 'image' | 'video' | 'audio' | 'file' | 'record';
+
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'tiff']);
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'm4v']);
 const AUDIO_EXTS = new Set(['mp3', 'ogg', 'wav', 'flac', 'aac', 'm4a', 'wma', 'opus']);
@@ -36,8 +38,8 @@ function getFileUploadMediaType(file: FileUpload): 'image' | 'video' | 'audio' |
   return 'file';
 }
 
-function getAttachmentMediaType(attachment: Attachment): 'image' | 'video' | 'audio' | 'file' {
-  return attachment.type ?? 'file';
+function getAttachmentMediaType(attachment: Attachment): QQAttachmentMediaType {
+  return (attachment.type as QQAttachmentMediaType | undefined) ?? 'file';
 }
 
 async function resolveAttachmentData(
@@ -73,7 +75,7 @@ async function resolveFileUpload(file: FileUpload): Promise<Buffer> {
 }
 
 function toMediaSegment(
-  mediaType: 'image' | 'video' | 'audio' | 'file',
+  mediaType: QQAttachmentMediaType,
   data: string | Buffer,
   name?: string
 ): SendMessageSegment {
@@ -83,6 +85,7 @@ function toMediaSegment(
     case 'video':
       return Structs.video(data, name);
     case 'audio':
+    case 'record':
       return Structs.record(data);
     case 'file':
       return Structs.file(data, name);
