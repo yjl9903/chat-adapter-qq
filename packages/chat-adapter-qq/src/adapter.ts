@@ -30,11 +30,11 @@ import type {
   QQThreadId
 } from './types.js';
 
-import { QQFormatConverter, type QQParsedIncomingMessage } from './converter/index.js';
-import { normalizeQQEmojiId } from './emoji.js';
-import { QQNapcatConnectionHeartbeat } from './heartbeat.js';
 import { LinkedQueue } from './linked-queue.js';
+import { normalizeQQEmojiId } from './emoji.js';
+import { QQNapcatConnectionHeartbeat } from './napcat/heartbeat.js';
 import { CachedNCWebsocket } from './napcat/cached-client.js';
+import { QQFormatConverter, type QQParsedIncomingMessage } from './converter/index.js';
 import {
   isMention,
   isSelfMessage,

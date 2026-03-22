@@ -1,6 +1,6 @@
 import type { Logger } from 'chat';
 
-import type { QQHeartbeatConfig, QQNapcatClient } from './types.js';
+import type { QQHeartbeatConfig, QQNapcatClient } from '../types.js';
 
 type NapcatStatus = Awaited<ReturnType<QQNapcatClient['get_status']>>;
 
