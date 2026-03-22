@@ -15,7 +15,8 @@ It should be updated when runtime behavior, adapter APIs, or test coverage chang
 - Outbound renderer: `packages/chat-adapter-qq/src/converter/outgoing.ts`
 - Member/profile mapping helpers: `packages/chat-adapter-qq/src/utils.ts`
 - Emoji normalization: `packages/chat-adapter-qq/src/emoji.ts`
-- Heartbeat manager: `packages/chat-adapter-qq/src/heartbeat.ts`
+- Event emitter: `packages/chat-adapter-qq/src/event-emitter.ts`
+- Heartbeat manager: `packages/chat-adapter-qq/src/napcat/heartbeat.ts`
 - Cached NapCat client: `packages/chat-adapter-qq/src/napcat/cached-client.ts`
 
 ## Capability matrix
@@ -65,6 +66,20 @@ Private chats build a 2-member view (`self + peer`) from `get_login_info` + frie
 - Health probe: `get_status()`.
 - Unhealthy when request fails or `online/good` is false.
 - Threshold-based reconnect with in-flight dedup and recovery guard.
+- Adapter emits `heartbeat.failure`, `heartbeat.reconnecting`, and `heartbeat.reconnected` for heartbeat-driven recovery.
+
+### Adapter events
+
+- `adapter.on(event, handler)` / `adapter.off(event, handler)` are supported.
+- Socket bridge events:
+  - `socket.connecting`
+  - `socket.open`
+  - `socket.close`
+  - `socket.error`
+- Heartbeat bridge events:
+  - `heartbeat.failure`
+  - `heartbeat.reconnecting`
+  - `heartbeat.reconnected`
 
 ### Caching
 

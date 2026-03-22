@@ -1,3 +1,11 @@
+import type {
+  WSCloseRes,
+  WSConnecting,
+  WSErrorRes,
+  WSOpenRes,
+  WSReconnection
+} from 'node-napcat-ts';
+
 import {
   type Adapter,
   type AdapterPostableMessage,
@@ -20,6 +28,9 @@ import { ValidationError } from '@chat-adapter/shared';
 
 import type {
   QQAdapterConfig,
+  QQAdapterEvent,
+  QQAdapterEventMap,
+  QQAdapterEventHandler,
   QQEmojiLikeMessage,
   QQFriendInfo,
   QQGroupMessage,
@@ -31,6 +42,7 @@ import type {
 } from './types.js';
 
 import { LinkedQueue } from './linked-queue.js';
+import { EventEmitter } from './event-emitter.js';
 import { normalizeQQEmojiId } from './emoji.js';
 import { QQNapcatConnectionHeartbeat } from './napcat/heartbeat.js';
 import { CachedNCWebsocket } from './napcat/cached-client.js';
@@ -87,6 +99,8 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
   private heartbeat?: QQNapcatConnectionHeartbeat;
 
   private readonly incomingMessageQueues = new Map<string, LinkedQueue>();
+
+  private readonly eventEmitter = new EventEmitter<QQAdapterEventMap>();
 
   /** 创建 QQ 适配器实例（不发起连接）。 */
   public constructor(config: QQAdapterConfig) {
@@ -162,6 +176,14 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
    */
   public getClient() {
     return this.requireClient();
+  }
+
+  public on<T extends QQAdapterEvent>(event: T, handler: QQAdapterEventHandler<T>): () => void {
+    return this.eventEmitter.on(event, handler);
+  }
+
+  public off<T extends QQAdapterEvent>(event: T, handler: QQAdapterEventHandler<T>): void {
+    this.eventEmitter.off(event, handler);
   }
 
   /** QQ 适配器为 WS-only 模式，HTTP webhook 入口固定返回 501。 */
@@ -671,7 +693,10 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
         ...this.config.heartbeat,
         logger: this.logger,
         getStatus: () => this.requireClient().get_status(),
-        reconnect: () => this.reconnectClient()
+        reconnect: () => this.reconnectClient(),
+        onFailure: (event) => this.emitEvent('heartbeat.failure', event),
+        onReconnecting: (event) => this.emitEvent('heartbeat.reconnecting', event),
+        onReconnected: (event) => this.emitEvent('heartbeat.reconnected', event)
       });
     }
 
@@ -713,6 +738,10 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     this.client.on('message.group', this.onMessage);
     this.client.on('message.private', this.onMessage);
     this.client.on('notice.group_msg_emoji_like', this.onEmojiLikeMessage);
+    this.client.on('socket.connecting', this.onSocketConnecting);
+    this.client.on('socket.open', this.onSocketOpen);
+    this.client.on('socket.close', this.onSocketClose);
+    this.client.on('socket.error', this.onSocketError);
 
     this.listenersBound = true;
   }
@@ -752,6 +781,48 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
         raw
       });
     }
+  };
+
+  private readonly onSocketConnecting = (event: WSConnecting) => {
+    void this.emitEvent('socket.connecting', {
+      type: 'socket.connecting',
+      reconnection: {
+        ...event.reconnection
+      }
+    });
+  };
+
+  private readonly onSocketOpen = (event: WSOpenRes) => {
+    void this.emitEvent('socket.open', {
+      type: 'socket.open',
+      reconnection: {
+        ...event.reconnection
+      }
+    });
+  };
+
+  private readonly onSocketClose = (event: WSCloseRes) => {
+    void this.emitEvent('socket.close', {
+      type: 'socket.close',
+      code: event.code,
+      reason: event.reason,
+      reconnection: {
+        ...event.reconnection
+      }
+    });
+  };
+
+  private readonly onSocketError = (event: WSErrorRes) => {
+    const reconnection = { ...event.reconnection };
+
+    void this.emitEvent('socket.error', {
+      type: 'socket.error',
+      error: {
+        ...event,
+        reconnection
+      },
+      reconnection
+    });
   };
 
   /**
@@ -816,6 +887,18 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
     this.incomingMessageQueues.set(threadId, newQueue);
 
     return newQueue;
+  }
+
+  private emitEvent<T extends QQAdapterEvent>(
+    event: T,
+    payload: QQAdapterEventMap[T]
+  ): Promise<void> {
+    return this.eventEmitter.emit(event, payload, (error, failedEvent) => {
+      this.logger.error('qq adapter event hook failed', {
+        error,
+        event: failedEvent
+      });
+    });
   }
 
   /** 获取已初始化的 NapCat 客户端，否则抛出配置错误。 */

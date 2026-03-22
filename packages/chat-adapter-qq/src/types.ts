@@ -4,6 +4,8 @@ import type {
   GroupMsgEmojiLike,
   NCWebsocket,
   NCWebsocketOptions,
+  WSErrorRes,
+  WSReconnection,
   WSSendReturn
 } from 'node-napcat-ts';
 
@@ -30,6 +32,9 @@ export interface QQThreadId {
 
 /** NapCat WebSocket 客户端类型别名。 */
 export type QQNapcatClient = NCWebsocket;
+
+/** NapCat 状态查询结果。 */
+export type QQNapcatStatus = Awaited<ReturnType<QQNapcatClient['get_status']>>;
 
 /** NapCat API 查询返回的消息类型。 */
 export type QQApiMessage = WSSendReturn['get_msg'];
@@ -111,6 +116,70 @@ export interface QQAdapterConfig {
   /** 自定义 logger；未传时使用 Chat SDK 提供的 logger。 */
   logger?: Logger;
 }
+
+export interface QQAdapterSocketConnectingEvent {
+  type: 'socket.connecting';
+  reconnection: WSReconnection;
+}
+
+export interface QQAdapterSocketOpenEvent {
+  type: 'socket.open';
+  reconnection: WSReconnection;
+}
+
+export interface QQAdapterSocketCloseEvent {
+  type: 'socket.close';
+  code: number;
+  reason: string;
+  reconnection: WSReconnection;
+}
+
+export interface QQAdapterSocketErrorEvent {
+  type: 'socket.error';
+  error: WSErrorRes;
+  reconnection: WSReconnection;
+}
+
+export interface QQAdapterHeartbeatFailureEvent {
+  type: 'heartbeat.failure';
+  failures: number;
+  threshold: number;
+  status?: QQNapcatStatus;
+  error?: unknown;
+  willReconnect: boolean;
+}
+
+export interface QQAdapterHeartbeatReconnectingEvent {
+  type: 'heartbeat.reconnecting';
+  failures: number;
+  threshold: number;
+  trigger: 'heartbeat';
+  status?: QQNapcatStatus;
+}
+
+export interface QQAdapterHeartbeatReconnectedEvent {
+  type: 'heartbeat.reconnected';
+  failures: number;
+  threshold: number;
+  trigger: 'heartbeat';
+  status?: QQNapcatStatus;
+}
+
+export interface QQAdapterEventMap {
+  'socket.connecting': QQAdapterSocketConnectingEvent;
+  'socket.open': QQAdapterSocketOpenEvent;
+  'socket.close': QQAdapterSocketCloseEvent;
+  'socket.error': QQAdapterSocketErrorEvent;
+  'heartbeat.failure': QQAdapterHeartbeatFailureEvent;
+  'heartbeat.reconnecting': QQAdapterHeartbeatReconnectingEvent;
+  'heartbeat.reconnected': QQAdapterHeartbeatReconnectedEvent;
+}
+
+export type QQAdapterEvent = keyof QQAdapterEventMap;
+
+export type QQAdapterEventHandler<T extends QQAdapterEvent> = (
+  payload: QQAdapterEventMap[T]
+) => void | Promise<void>;
 
 // 扩展 chat 原有的消息类型
 declare module 'chat' {

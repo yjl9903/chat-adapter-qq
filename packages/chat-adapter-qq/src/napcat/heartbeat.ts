@@ -1,8 +1,12 @@
 import type { Logger } from 'chat';
 
-import type { QQHeartbeatConfig, QQNapcatClient } from '../types.js';
-
-type NapcatStatus = Awaited<ReturnType<QQNapcatClient['get_status']>>;
+import type {
+  QQAdapterHeartbeatFailureEvent,
+  QQAdapterHeartbeatReconnectedEvent,
+  QQAdapterHeartbeatReconnectingEvent,
+  QQHeartbeatConfig,
+  QQNapcatStatus
+} from '../types.js';
 
 /** 心跳轮询默认间隔（30s）。 */
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
@@ -14,10 +18,19 @@ export interface QQNapcatConnectionHeartbeatOptions extends QQHeartbeatConfig {
   logger: Logger;
 
   /** 拉取 NapCat 当前运行状态。 */
-  getStatus: () => Promise<NapcatStatus>;
+  getStatus: () => Promise<QQNapcatStatus>;
 
   /** 心跳不健康时的恢复动作（通常为重连 + 刷新登录态）。 */
   reconnect: () => Promise<void>;
+
+  /** 心跳失败时上报给上层适配器。 */
+  onFailure?: (event: QQAdapterHeartbeatFailureEvent) => void | Promise<void>;
+
+  /** 心跳触发恢复前上报给上层适配器。 */
+  onReconnecting?: (event: QQAdapterHeartbeatReconnectingEvent) => void | Promise<void>;
+
+  /** 心跳触发恢复成功后上报给上层适配器。 */
+  onReconnected?: (event: QQAdapterHeartbeatReconnectedEvent) => void | Promise<void>;
 }
 
 /**
@@ -29,9 +42,19 @@ export interface QQNapcatConnectionHeartbeatOptions extends QQHeartbeatConfig {
 export class QQNapcatConnectionHeartbeat {
   private readonly logger: Logger;
 
-  private readonly getStatus: () => Promise<NapcatStatus>;
+  private readonly getStatus: () => Promise<QQNapcatStatus>;
 
   private readonly reconnect: () => Promise<void>;
+
+  private readonly onFailureEvent?: (event: QQAdapterHeartbeatFailureEvent) => void | Promise<void>;
+
+  private readonly onReconnecting?: (
+    event: QQAdapterHeartbeatReconnectingEvent
+  ) => void | Promise<void>;
+
+  private readonly onReconnected?: (
+    event: QQAdapterHeartbeatReconnectedEvent
+  ) => void | Promise<void>;
 
   private readonly intervalMs: number;
 
@@ -53,6 +76,9 @@ export class QQNapcatConnectionHeartbeat {
     this.logger = options.logger;
     this.getStatus = options.getStatus;
     this.reconnect = options.reconnect;
+    this.onFailureEvent = options.onFailure;
+    this.onReconnecting = options.onReconnecting;
+    this.onReconnected = options.onReconnected;
     this.intervalMs = options.intervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
     this.failureThreshold = options.failureThreshold ?? DEFAULT_HEARTBEAT_FAILURE_THRESHOLD;
     this.reconnectOnFailure = options.reconnectOnFailure ?? true;
@@ -115,12 +141,12 @@ export class QQNapcatConnectionHeartbeat {
       return;
     }
 
-    let status: NapcatStatus;
+    let status: QQNapcatStatus;
     try {
       status = await this.getStatus();
     } catch (error) {
       this.logger.warn('qq heartbeat status request failed', error);
-      await this.onFailure();
+      await this.onFailure({ error });
       return;
     }
 
@@ -135,15 +161,36 @@ export class QQNapcatConnectionHeartbeat {
     }
 
     this.logger.warn('qq heartbeat unhealthy status', status);
-    await this.onFailure(status);
+    await this.onFailure({ status });
   }
 
-  private async onFailure(status?: NapcatStatus): Promise<void> {
+  private async onFailure({
+    status,
+    error
+  }: {
+    status?: QQNapcatStatus;
+    error?: unknown;
+  }): Promise<void> {
     if (!this.running) {
       return;
     }
 
     this.failures += 1;
+    const willReconnect =
+      this.reconnectOnFailure && this.failures >= this.failureThreshold && !this.recovering;
+
+    await this.onFailureEvent?.({
+      type: 'heartbeat.failure',
+      failures: this.failures,
+      threshold: this.failureThreshold,
+      status,
+      error,
+      willReconnect
+    });
+
+    if (!this.running) {
+      return;
+    }
 
     if (!this.reconnectOnFailure) {
       return;
@@ -161,8 +208,25 @@ export class QQNapcatConnectionHeartbeat {
         online: status?.online,
         good: status?.good
       });
+      await this.onReconnecting?.({
+        type: 'heartbeat.reconnecting',
+        failures: this.failures,
+        threshold: this.failureThreshold,
+        trigger: 'heartbeat',
+        status
+      });
+      if (!this.running) {
+        return;
+      }
       await this.reconnect();
       if (this.running) {
+        await this.onReconnected?.({
+          type: 'heartbeat.reconnected',
+          failures: this.failures,
+          threshold: this.failureThreshold,
+          trigger: 'heartbeat',
+          status
+        });
         this.failures = 0;
       }
     } catch (error) {

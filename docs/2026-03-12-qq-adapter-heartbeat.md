@@ -11,7 +11,7 @@ For full adapter status, see `docs/2026-03-12-qq-adapter-current-status.md`.
 ## Reference
 
 - adapter runtime: `packages/chat-adapter-qq/src/adapter.ts`
-- heartbeat manager: `packages/chat-adapter-qq/src/heartbeat.ts`
+- heartbeat manager: `packages/chat-adapter-qq/src/napcat/heartbeat.ts`
 - config types: `packages/chat-adapter-qq/src/types.ts`
 - factory validation: `packages/chat-adapter-qq/src/factory.ts`
 - tests: `packages/chat-adapter-qq/test/heartbeat.test.ts`
@@ -55,8 +55,11 @@ Validation in factory:
 
 - at most one heartbeat check in-flight at a time
 - consecutive failures increment counter
+- each failure emits adapter event `heartbeat.failure`
 - if `reconnectOnFailure` and counter reaches threshold:
+  - emit adapter event `heartbeat.reconnecting`
   - trigger reconnect once (guarded by `recovering` flag)
+  - emit adapter event `heartbeat.reconnected` after reconnect callback succeeds
   - reset failure counter on successful reconnect
 - reconnect errors are logged; next polling cycle continues
 
@@ -66,7 +69,8 @@ Validation in factory:
 
 1. interval polling behavior
 2. unhealthy status trigger + reconnect
-3. no more polling after adapter shutdown
+3. heartbeat failure / reconnecting event emission
+4. no more polling after adapter shutdown
 
 ## Verification commands
 

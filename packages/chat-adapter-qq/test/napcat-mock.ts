@@ -1,12 +1,25 @@
-import type { NodeSegment, SendMessageSegment } from 'node-napcat-ts';
+import type { NodeSegment, SendMessageSegment, SocketHandler } from 'node-napcat-ts';
 import {
   createQQAdapter,
+  type QQEmojiLikeMessage,
   type QQGroupMemberInfo,
   type QQNapcatClient,
   type QQGroupMessage,
   type QQPrivateMessage,
   type QQRawMessage
 } from '../src/index.js';
+
+type MockNapcatEventMap = {
+  'message.group': QQGroupMessage;
+  'message.private': QQPrivateMessage;
+  'notice.group_msg_emoji_like': QQEmojiLikeMessage;
+  'socket.connecting': SocketHandler['socket.connecting'];
+  'socket.open': SocketHandler['socket.open'];
+  'socket.close': SocketHandler['socket.close'];
+  'socket.error': SocketHandler['socket.error'];
+};
+
+type MockNapcatEvent = keyof MockNapcatEventMap;
 
 type HistoryParams = {
   message_seq?: number;
@@ -44,8 +57,17 @@ export class MockNapcatClient {
   getStrangerInfoCalls: number[] = [];
 
   private nextMessageId = 1000;
-  private readonly groupHandlers: Array<(event: QQGroupMessage) => void> = [];
-  private readonly privateHandlers: Array<(event: QQPrivateMessage) => void> = [];
+  private readonly handlers: {
+    [K in MockNapcatEvent]: Array<(event: MockNapcatEventMap[K]) => void>;
+  } = {
+    'message.group': [],
+    'message.private': [],
+    'notice.group_msg_emoji_like': [],
+    'socket.connecting': [],
+    'socket.open': [],
+    'socket.close': [],
+    'socket.error': []
+  };
   private readonly groupHistory = new Map<number, QQRawMessage[]>();
   private readonly friendHistory = new Map<number, QQRawMessage[]>();
   private readonly messagesById = new Map<number, QQRawMessage>();
@@ -92,38 +114,98 @@ export class MockNapcatClient {
 
   async connect(): Promise<void> {
     this.connectCalls += 1;
+    this.emitSocketConnecting();
+    this.emitSocketOpen();
   }
 
   disconnect(): void {
     this.disconnectCalls += 1;
+    this.emitSocketClose();
   }
 
   async reconnect(): Promise<void> {
     this.reconnectCalls += 1;
     this.disconnectCalls += 1;
     this.connectCalls += 1;
+    this.emitSocketClose();
+    this.emitSocketConnecting();
+    this.emitSocketOpen();
   }
 
-  on(event: string, handler: (event: QQGroupMessage | QQPrivateMessage) => void): this {
-    if (event === 'message.group') {
-      this.groupHandlers.push(handler as (event: QQGroupMessage) => void);
-    } else if (event === 'message.private') {
-      this.privateHandlers.push(handler as (event: QQPrivateMessage) => void);
-    }
-
+  on<TEvent extends MockNapcatEvent>(
+    event: TEvent,
+    handler: (event: MockNapcatEventMap[TEvent]) => void
+  ): this {
+    this.handlers[event].push(handler);
     return this;
   }
 
   emitGroup(event: QQGroupMessage): void {
-    for (const handler of this.groupHandlers) {
-      handler(event);
-    }
+    this.emit('message.group', event);
   }
 
   emitPrivate(event: QQPrivateMessage): void {
-    for (const handler of this.privateHandlers) {
-      handler(event);
+    this.emit('message.private', event);
+  }
+
+  emitEmojiLike(event: QQEmojiLikeMessage): void {
+    this.emit('notice.group_msg_emoji_like', event);
+  }
+
+  emitSocketConnecting(
+    event: SocketHandler['socket.connecting'] = {
+      reconnection: {
+        enable: false,
+        attempts: 0,
+        delay: 0,
+        nowAttempts: 1
+      }
     }
+  ): void {
+    this.emit('socket.connecting', event);
+  }
+
+  emitSocketOpen(
+    event: SocketHandler['socket.open'] = {
+      reconnection: {
+        enable: false,
+        attempts: 0,
+        delay: 0,
+        nowAttempts: 1
+      }
+    }
+  ): void {
+    this.emit('socket.open', event);
+  }
+
+  emitSocketClose(
+    event: SocketHandler['socket.close'] = {
+      code: 1000,
+      reason: 'manual disconnect',
+      reconnection: {
+        enable: false,
+        attempts: 0,
+        delay: 0,
+        nowAttempts: 1
+      }
+    }
+  ): void {
+    this.emit('socket.close', event);
+  }
+
+  emitSocketError(
+    event: SocketHandler['socket.error'] = {
+      reconnection: {
+        enable: false,
+        attempts: 0,
+        delay: 0,
+        nowAttempts: 1
+      },
+      error_type: 'connect_error',
+      errors: [null]
+    }
+  ): void {
+    this.emit('socket.error', event);
   }
 
   async get_login_info(): Promise<{ user_id: number; nickname: string }> {
@@ -425,6 +507,15 @@ export class MockNapcatClient {
 
   setStatusQueue(statuses: Array<MockStatusResult | Error>): void {
     this.statusQueue = [...statuses];
+  }
+
+  private emit<TEvent extends MockNapcatEvent>(
+    event: TEvent,
+    payload: MockNapcatEventMap[TEvent]
+  ): void {
+    for (const handler of this.handlers[event]) {
+      handler(payload);
+    }
   }
 
   private paginateHistory(messages: QQRawMessage[], params: HistoryParams): QQRawMessage[] {

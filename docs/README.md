@@ -1,6 +1,6 @@
-# docs index
+# Documents Index
 
-Last updated: 2026-03-12
+Last updated: 2026-03-22
 
 This folder stores development notes for `chat-adapter-qq`.
 
@@ -16,6 +16,8 @@ This folder stores development notes for `chat-adapter-qq`.
   - Current implementation snapshot: capability matrix, key behaviors, and test coverage map.
 - `2026-03-12-qq-adapter-heartbeat.md`
   - Heartbeat architecture and failure/reconnect policy.
+- `2026-03-22-qq-adapter-events.md`
+  - Adapter event API, NapCat socket bridging, and heartbeat event mapping.
 - `2026-03-11-qq-adapter-message-markdown-parsing.md`
   - Inbound NapCat segment -> Markdown/AST/plain-text conversion rules.
 - `2026-03-11-qq-adapter-member-queries.md`
