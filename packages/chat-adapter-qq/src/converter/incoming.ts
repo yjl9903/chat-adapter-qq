@@ -30,8 +30,12 @@ export interface QQIncomingParseOptions {
 
 interface QQPreparedIncomingSegments {
   activeSegments: QQMessageSegment[];
-  attachments: Attachment[];
   standaloneForwardId?: string;
+}
+
+interface QQRenderedIncomingFragment {
+  markdown: string;
+  attachments: Attachment[];
 }
 
 const FILTERED_SEGMENT_TYPES = new Set(['rps', 'poke', 'shake']);
@@ -200,7 +204,6 @@ function attachmentFromSegment(segment: QQMessageSegment): Attachment | null {
 
 function prepareIncomingSegments(raw: QQRawMessage): QQPreparedIncomingSegments {
   const activeSegments: QQMessageSegment[] = [];
-  const attachments: Attachment[] = [];
 
   for (const segment of raw.message) {
     if (isFilteredSegment(segment)) {
@@ -208,18 +211,12 @@ function prepareIncomingSegments(raw: QQRawMessage): QQPreparedIncomingSegments 
     }
 
     activeSegments.push(segment);
-
-    const attachment = attachmentFromSegment(segment);
-    if (attachment) {
-      attachments.push(attachment);
-    }
   }
 
   const standaloneForward = activeSegments.length === 1 ? activeSegments[0] : null;
 
   return {
     activeSegments,
-    attachments,
     standaloneForwardId:
       standaloneForward?.type === 'forward' && !hasInlineForwardContent(standaloneForward)
         ? standaloneForward.data.id
@@ -239,26 +236,26 @@ export class QQIncomingMessageParser {
   }
 
   public parseSync(raw: QQRawMessage, options: QQIncomingParseOptions): QQParsedIncomingMessage {
-    const { activeSegments, attachments } = prepareIncomingSegments(raw);
-    const markdownParts = activeSegments.map((segment) =>
+    const { activeSegments } = prepareIncomingSegments(raw);
+    const fragments = activeSegments.map((segment) =>
       this.renderSegmentSync(raw, segment, options)
     );
 
-    return this.finalizeParsedMessage(raw, markdownParts, attachments);
+    return this.finalizeParsedMessage(raw, fragments);
   }
 
   public async parse(
     raw: QQRawMessage,
     options: QQIncomingParseOptions
   ): Promise<QQParsedIncomingMessage> {
-    const { activeSegments, attachments, standaloneForwardId } = prepareIncomingSegments(raw);
+    const { activeSegments, standaloneForwardId } = prepareIncomingSegments(raw);
 
     if (standaloneForwardId) {
-      const markdown = await this.fetchForwardMessage(raw.message_id, standaloneForwardId, options);
-      return this.finalizeParsedMessage(raw, markdown ? [markdown] : [], attachments);
+      const fragment = await this.fetchForwardMessage(raw.message_id, standaloneForwardId, options);
+      return this.finalizeParsedMessage(raw, [fragment]);
     }
 
-    const markdownParts = await Promise.all(
+    const fragments = await Promise.all(
       activeSegments.map((segment, index) =>
         index === 0 && segment.type === 'reply'
           ? this.fetchReplyMessage(segment.data.id, options)
@@ -266,7 +263,7 @@ export class QQIncomingMessageParser {
       )
     );
 
-    return this.finalizeParsedMessage(raw, markdownParts, attachments);
+    return this.finalizeParsedMessage(raw, fragments);
   }
 
   private getMentionFallbackLabel(raw: QQRawMessage, segment: QQMessageSegment): string | null {
@@ -300,26 +297,31 @@ export class QQIncomingMessageParser {
   private renderQuotedMessageSync(
     raw: QQRawMessage,
     options: QQIncomingParseOptions
-  ): string | null {
-    const bodyMarkdown = this.parseSync(raw, options).markdown;
+  ): QQRenderedIncomingFragment | null {
+    const parsed = this.parseSync(raw, options);
+    const bodyMarkdown = parsed.markdown;
     if (!bodyMarkdown.trim()) {
       return null;
     }
 
     const authorId = String(raw.user_id);
-    return toReplyQuoteMarkdown(
-      getSenderDisplayLabel(raw) ?? authorId,
-      authorId,
-      bodyMarkdown,
-      options
-    );
+    return {
+      markdown: toReplyQuoteMarkdown(
+        getSenderDisplayLabel(raw) ?? authorId,
+        authorId,
+        bodyMarkdown,
+        options
+      ),
+      attachments: parsed.attachments
+    };
   }
 
   private async renderQuotedMessage(
     raw: QQRawMessage,
     options: QQIncomingParseOptions
-  ): Promise<string | null> {
-    const bodyMarkdown = (await this.parse(raw, options)).markdown;
+  ): Promise<QQRenderedIncomingFragment | null> {
+    const parsed = await this.parse(raw, options);
+    const bodyMarkdown = parsed.markdown;
     if (!bodyMarkdown.trim()) {
       return null;
     }
@@ -329,19 +331,28 @@ export class QQIncomingMessageParser {
       (await this.converter.resolveMentionLabel(raw, authorId, getSenderDisplayLabel(raw))) ??
       authorId;
 
-    return toReplyQuoteMarkdown(authorName, authorId, bodyMarkdown, options);
+    return {
+      markdown: toReplyQuoteMarkdown(authorName, authorId, bodyMarkdown, options),
+      attachments: parsed.attachments
+    };
   }
 
   private renderForwardContentSync(
     content: QQRawMessage[],
     options: QQIncomingParseOptions
-  ): string | null {
+  ): QQRenderedIncomingFragment | null {
     try {
-      const expanded = content
-        .map((forwardedRaw) => this.renderQuotedMessageSync(forwardedRaw, options) ?? '')
-        .join('');
+      const fragments = content
+        .map((forwardedRaw) => this.renderQuotedMessageSync(forwardedRaw, options))
+        .filter((fragment): fragment is QQRenderedIncomingFragment => fragment !== null);
+      const expanded = fragments.map((fragment) => fragment.markdown).join('');
 
-      return expanded.trim().length > 0 ? expanded : null;
+      return expanded.trim().length > 0
+        ? {
+            markdown: expanded,
+            attachments: fragments.flatMap((fragment) => fragment.attachments)
+          }
+        : null;
     } catch {
       return null;
     }
@@ -350,17 +361,21 @@ export class QQIncomingMessageParser {
   private async renderForwardContent(
     content: QQRawMessage[],
     options: QQIncomingParseOptions
-  ): Promise<string | null> {
+  ): Promise<QQRenderedIncomingFragment | null> {
     try {
-      const expanded = (
+      const fragments = (
         await Promise.all(
-          content.map(
-            async (forwardedRaw) => (await this.renderQuotedMessage(forwardedRaw, options)) ?? ''
-          )
+          content.map(async (forwardedRaw) => await this.renderQuotedMessage(forwardedRaw, options))
         )
-      ).join('');
+      ).filter((fragment): fragment is QQRenderedIncomingFragment => fragment !== null);
+      const expanded = fragments.map((fragment) => fragment.markdown).join('');
 
-      return expanded.trim().length > 0 ? expanded : null;
+      return expanded.trim().length > 0
+        ? {
+            markdown: expanded,
+            attachments: fragments.flatMap((fragment) => fragment.attachments)
+          }
+        : null;
     } catch {
       return null;
     }
@@ -369,15 +384,15 @@ export class QQIncomingMessageParser {
   private async fetchReplyMessage(
     messageId: string,
     options: QQIncomingParseOptions
-  ): Promise<string> {
+  ): Promise<QQRenderedIncomingFragment> {
     const client = this.client;
     if (!client) {
-      return toReplyPlaceholder(messageId);
+      return { markdown: toReplyPlaceholder(messageId), attachments: [] };
     }
 
     const numericMessageId = Number(messageId);
     if (!Number.isInteger(numericMessageId) || numericMessageId <= 0) {
-      return toReplyPlaceholder(messageId);
+      return { markdown: toReplyPlaceholder(messageId), attachments: [] };
     }
 
     try {
@@ -385,10 +400,13 @@ export class QQIncomingMessageParser {
         message_id: numericMessageId
       });
       return (
-        (await this.renderQuotedMessage(replyMessage, options)) ?? toReplyPlaceholder(messageId)
+        (await this.renderQuotedMessage(replyMessage, options)) ?? {
+          markdown: toReplyPlaceholder(messageId),
+          attachments: []
+        }
       );
     } catch {
-      return toReplyPlaceholder(messageId);
+      return { markdown: toReplyPlaceholder(messageId), attachments: [] };
     }
   }
 
@@ -396,10 +414,10 @@ export class QQIncomingMessageParser {
     messageId: number,
     forwardId: string,
     options: QQIncomingParseOptions
-  ): Promise<string> {
+  ): Promise<QQRenderedIncomingFragment> {
     const client = this.client;
     if (!client) {
-      return toForwardPlaceholder(forwardId);
+      return { markdown: toForwardPlaceholder(forwardId), attachments: [] };
     }
 
     try {
@@ -408,18 +426,22 @@ export class QQIncomingMessageParser {
       });
 
       if (expandedMessage.message_id === messageId && getStandaloneForwardStub(expandedMessage)) {
-        return toForwardPlaceholder(forwardId);
+        return { markdown: toForwardPlaceholder(forwardId), attachments: [] };
       }
 
-      const expandedMarkdown = (await this.parse(expandedMessage, options)).markdown;
+      const parsed = await this.parse(expandedMessage, options);
+      const expandedMarkdown = parsed.markdown;
 
       if (!expandedMarkdown.trim()) {
-        return toForwardPlaceholder(forwardId);
+        return { markdown: toForwardPlaceholder(forwardId), attachments: [] };
       }
 
-      return expandedMarkdown;
+      return {
+        markdown: expandedMarkdown,
+        attachments: parsed.attachments
+      };
     } catch {
-      return toForwardPlaceholder(forwardId);
+      return { markdown: toForwardPlaceholder(forwardId), attachments: [] };
     }
   }
 
@@ -427,16 +449,26 @@ export class QQIncomingMessageParser {
     raw: QQRawMessage,
     segment: QQMessageSegment,
     options: QQIncomingParseOptions
-  ): Promise<string> {
+  ): Promise<QQRenderedIncomingFragment> {
     if (segment.type === 'at') {
-      return this.renderAtSegment(segment, await this.resolveMentionLabel(raw, segment), options);
+      return {
+        markdown: this.renderAtSegment(
+          segment,
+          await this.resolveMentionLabel(raw, segment),
+          options
+        ),
+        attachments: []
+      };
     }
 
     if (segment.type === 'forward') {
       const data = segment.data as { id: string; content?: QQRawMessage[] };
       if (Array.isArray(data.content) && data.content.length > 0) {
         return (
-          (await this.renderForwardContent(data.content, options)) ?? toForwardPlaceholder(data.id)
+          (await this.renderForwardContent(data.content, options)) ?? {
+            markdown: toForwardPlaceholder(data.id),
+            attachments: []
+          }
         );
       }
     }
@@ -461,33 +493,54 @@ export class QQIncomingMessageParser {
     raw: QQRawMessage,
     segment: QQMessageSegment,
     options: QQIncomingParseOptions
-  ): string {
+  ): QQRenderedIncomingFragment {
+    const attachment = attachmentFromSegment(segment);
+
     if (segment.type === 'text') {
-      return segment.data.text;
+      return { markdown: segment.data.text, attachments: [] };
     }
 
     if (segment.type === 'at') {
-      return this.renderAtSegment(segment, this.getMentionFallbackLabel(raw, segment), options);
+      return {
+        markdown: this.renderAtSegment(
+          segment,
+          this.getMentionFallbackLabel(raw, segment),
+          options
+        ),
+        attachments: []
+      };
     }
 
     if (segment.type === 'face') {
-      return `表情:${segment.data.id} `;
+      return { markdown: `表情:${segment.data.id} `, attachments: [] };
     }
 
     if (segment.type === 'image') {
       const alt = basename(segment.data.file, 'image');
       if (isHttpUrl(segment.data.url)) {
-        return asOwnLine(`![${escapeMarkdownLabel(alt)}](${segment.data.url})`);
+        return {
+          markdown: asOwnLine(`![${escapeMarkdownLabel(alt)}](${segment.data.url})`),
+          attachments: attachment ? [attachment] : []
+        };
       }
-      return asOwnLine(`图片:${alt}`);
+      return {
+        markdown: asOwnLine(`图片:${alt}`),
+        attachments: attachment ? [attachment] : []
+      };
     }
 
     if (segment.type === 'file') {
       const label = basename(segment.data.file, 'file');
       if (isHttpUrl(segment.data.file)) {
-        return asOwnLine(toMarkdownLink(label, segment.data.file));
+        return {
+          markdown: asOwnLine(toMarkdownLink(label, segment.data.file)),
+          attachments: attachment ? [attachment] : []
+        };
       }
-      return asOwnLine(`附件:${label}`);
+      return {
+        markdown: asOwnLine(`附件:${label}`),
+        attachments: attachment ? [attachment] : []
+      };
     }
 
     if (segment.type === 'video') {
@@ -498,48 +551,64 @@ export class QQIncomingMessageParser {
           ? segment.data.file
           : undefined;
       if (url) {
-        return asOwnLine(toMarkdownLink(label, url));
+        return {
+          markdown: asOwnLine(toMarkdownLink(label, url)),
+          attachments: attachment ? [attachment] : []
+        };
       }
-      return asOwnLine(`视频:${label}`);
+      return {
+        markdown: asOwnLine(`视频:${label}`),
+        attachments: attachment ? [attachment] : []
+      };
     }
 
     if (segment.type === 'record') {
       const label = basename(segment.data.file, 'audio');
       if (isHttpUrl(segment.data.file)) {
-        return asOwnLine(toMarkdownLink(label, segment.data.file));
+        return {
+          markdown: asOwnLine(toMarkdownLink(label, segment.data.file)),
+          attachments: attachment ? [attachment] : []
+        };
       }
-      return asOwnLine(`音频:${label}`);
+      return {
+        markdown: asOwnLine(`音频:${label}`),
+        attachments: attachment ? [attachment] : []
+      };
     }
 
     if (segment.type === 'reply') {
-      return toReplyPlaceholder(segment.data.id);
+      return { markdown: toReplyPlaceholder(segment.data.id), attachments: [] };
     }
 
     if (segment.type === 'forward') {
       const data = segment.data as { id: string; content?: QQRawMessage[] };
       if (Array.isArray(data.content) && data.content.length > 0) {
         return (
-          this.renderForwardContentSync(data.content, options) ?? toForwardPlaceholder(data.id)
+          this.renderForwardContentSync(data.content, options) ?? {
+            markdown: toForwardPlaceholder(data.id),
+            attachments: []
+          }
         );
       }
 
-      return toForwardPlaceholder(segment.data.id);
+      return { markdown: toForwardPlaceholder(segment.data.id), attachments: [] };
     }
 
     if (segment.type === 'markdown') {
-      return segment.data.content;
+      return { markdown: segment.data.content, attachments: [] };
     }
 
-    return '';
+    return { markdown: '', attachments: [] };
   }
 
   private finalizeParsedMessage(
     raw: QQRawMessage,
-    markdownParts: string[],
-    attachments: Attachment[]
+    fragments: QQRenderedIncomingFragment[]
   ): QQParsedIncomingMessage {
+    const attachments = fragments.flatMap((fragment) => fragment.attachments);
     const markdown =
-      markdownParts
+      fragments
+        .map((fragment) => fragment.markdown)
         .filter((part) => part.length > 0)
         .join('')
         .trim() || (raw.message.length === 0 && raw.raw_message ? raw.raw_message : '');

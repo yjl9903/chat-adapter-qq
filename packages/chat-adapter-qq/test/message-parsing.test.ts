@@ -363,10 +363,25 @@ describe('QQAdapter parseMessage', () => {
     const ctx = await createQQTestContext();
 
     ctx.client.setMessage(
-      createGroupMessage([{ type: 'text', data: { text: 'quoted line 1\n\nquoted line 2' } }], {
-        messageId: 900,
-        userId: 20002
-      })
+      createGroupMessage(
+        [
+          { type: 'text', data: { text: 'quoted line 1\n\nquoted line 2' } },
+          {
+            type: 'image',
+            data: {
+              summary: 'img',
+              file: 'reply.png',
+              sub_type: 0,
+              url: 'https://example.com/reply.png',
+              file_size: '8'
+            }
+          }
+        ],
+        {
+          messageId: 900,
+          userId: 20002
+        }
+      )
     );
 
     const incoming = createGroupMessage(
@@ -381,19 +396,34 @@ describe('QQAdapter parseMessage', () => {
 
     expect({
       text: message.text,
-      markdown: stringifyMarkdown(message.formatted)
+      markdown: stringifyMarkdown(message.formatted),
+      attachments: message.attachments
     }).toMatchInlineSnapshot(`
       {
+        "attachments": [
+          {
+            "name": "reply.png",
+            "qq": {
+              "file": "reply.png",
+              "kind": "image",
+            },
+            "size": 8,
+            "type": "image",
+            "url": "https://example.com/reply.png",
+          },
+        ],
         "markdown": "> @alice{qq:20002}:
       > quoted line 1
       >
       > quoted line 2
+      > ![reply.png](https://example.com/reply.png)
 
       tail
       ",
         "text": "@alice{qq:20002}:
       quoted line 1
       quoted line 2
+      reply.png
       tail",
       }
     `);
@@ -492,9 +522,22 @@ describe('QQAdapter parseMessage', () => {
       getMsgCalls: ctx.client.getMsgCalls,
       getForwardMsgCalls: ctx.client.getForwardMsgCalls,
       text: message.text,
-      markdown: stringifyMarkdown(message.formatted)
+      markdown: stringifyMarkdown(message.formatted),
+      attachments: message.attachments
     }).toMatchInlineSnapshot(`
       {
+        "attachments": [
+          {
+            "name": "fwd.png",
+            "qq": {
+              "file": "fwd.png",
+              "kind": "image",
+            },
+            "size": 7,
+            "type": "image",
+            "url": "https://example.com/fwd.png",
+          },
+        ],
         "getForwardMsgCalls": [],
         "getMsgCalls": [
           920,
