@@ -64,8 +64,8 @@ importers:
         version: 8.20.0
     devDependencies:
       '@chat-adapter/state-memory':
-        specifier: ^4.21.0
-        version: 4.21.0
+        specifier: ^4.22.0
+        version: 4.22.0
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
@@ -114,8 +114,8 @@ packages:
   '@chat-adapter/shared@4.20.2':
     resolution: {integrity: sha512-cTtTVHgH/2l9/+ILSExCr/kZwzz2Y8tp7WKRweMRWFOBcXZ0U5ZtviZCCDWBqU/YOBilQUgON8vIP9eo1w0m5w==}
 
-  '@chat-adapter/state-memory@4.21.0':
-    resolution: {integrity: sha512-b6+g87mv0pylmWXxPgC5eOlHgAF/OM1/Cq8+2PaSoedB0GrKCfp5y05nc6DYgxKrh8Fam2gFwlEQx9ilRXVsUg==}
+  '@chat-adapter/state-memory@4.22.0':
+    resolution: {integrity: sha512-7iDVF2yVVAjNuyI+lHEuBT68yf45EwQ+dv3mbbkl057/WJLqvrON8LfRIPniIXShPWAOHlLQluGz4vzQPZ/svQ==}
 
   '@emnapi/core@1.9.1':
     resolution: {integrity: sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA==}
@@ -662,6 +662,9 @@ packages:
 
   chat@4.21.0:
     resolution: {integrity: sha512-rhWVU0pjpf6sQGhW/yx6h4cKYhwoxInQbZH0MnAKM4CfKi20LX90OgHvPWtk3PghiSc9t9v0eu+pGeDnayAndA==}
+
+  chat@4.22.0:
+    resolution: {integrity: sha512-fIcHcXIQsdBwEsdzOgpSQn/prLbfma4K4t8RtHss5ul62mb6NUxpc8gp8OU0/n3+jt8myq9kJenPuH5UPuu5jg==}
 
   chownr@1.1.4:
     resolution: {integrity: sha512-jJ0bqzaylmJtVnNgzTeSOs8DPavpbYgEr/b0YL8/2GO3xJEhInFmhKMUnEJQjZumK7KXGFhUy89PrsJWlakBVg==}
@@ -1431,9 +1434,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@chat-adapter/state-memory@4.21.0':
+  '@chat-adapter/state-memory@4.22.0':
     dependencies:
-      chat: 4.21.0
+      chat: 4.22.0
     transitivePeerDependencies:
       - supports-color
 
@@ -1828,6 +1831,18 @@ snapshots:
       - supports-color
 
   chat@4.21.0:
+    dependencies:
+      '@workflow/serde': 4.1.0-beta.2
+      mdast-util-to-string: 4.0.0
+      remark-gfm: 4.0.1
+      remark-parse: 11.0.0
+      remark-stringify: 11.0.0
+      remend: 1.3.0
+      unified: 11.0.5
+    transitivePeerDependencies:
+      - supports-color
+
+  chat@4.22.0:
     dependencies:
       '@workflow/serde': 4.1.0-beta.2
       mdast-util-to-string: 4.0.0
