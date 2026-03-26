@@ -152,15 +152,13 @@ bot.onSubscribedMessage(async (_thread, message) => {
 });
 ```
 
-QQ 适配器额外提供了 `attachment.qq` 字段, 用于在附件链接过期时重新获取资源.
+QQ 适配器额外提供了 `refreshAttachment` 方法, 用于在附件链接过期时可以重新获取资源.
 
 ```ts
 const adapter = bot.getAdapter('qq');
 
 bot.onSubscribedMessage(async (_thread, message) => {
   for (const attachment of message.attachments) {
-    if (!attachment.qq) continue;
-
     const refreshed = await adapter.refreshAttachment(attachment);
     console.log('old url:', attachment.url);
     console.log('new url:', refreshed.url);
@@ -168,14 +166,23 @@ bot.onSubscribedMessage(async (_thread, message) => {
 });
 ```
 
-如果你需要持久化消息,至少应该保存 `attachment.qq`. 只有保存了它, 后面才能重新获取新的临时下载链接.
-
-你也可以直接用已保存的 `attachment.qq` 中的 `file` 和 `kind` 字段重新获取资源下载链接.
+如果你有持久化消息需求, 应该完整保存 `attachment` 对象, 以调用 `refreshAttachment` 方法获取新的资源临时链接.
 
 ```ts
 const adapter = bot.getAdapter('qq');
 
-const refreshed = await adapter.refreshAttachment('<attachment.qq.file>', 'image');
+const attachment = {
+  type: 'image',
+  name: 'image.png',
+  url: 'https://example.com/image.png',
+  size: 12,
+  qq: {
+    kind: 'image',
+    file: '...'
+  }
+};
+
+const refreshed = await adapter.refreshAttachment(attachment);
 ```
 
 ### 7. 表情回应和输入状态

@@ -164,16 +164,42 @@ describe('QQAdapter media refresh', () => {
     expect(refreshed.url).toBe('https://example.com/file/new');
   });
 
-  it('accepts raw file strings when kind is provided', async () => {
+  it('passes emoji image attachments through without refreshing', async () => {
     const { adapter, client } = createAdapter();
-    client.setFileResult('qq-file-id', {
-      file: '/tmp/report.pdf',
-      url: 'https://example.com/file/new'
-    });
+    const attachment = {
+      type: 'image' as const,
+      name: 'emoji.png',
+      url: 'https://example.com/emoji/original',
+      size: 12,
+      qq: {
+        kind: 'image' as const,
+        file: 'cache/emoji-key',
+        emoji: {
+          id: '987654',
+          packageId: 123456
+        }
+      }
+    };
 
-    const refreshed = await adapter.refreshAttachment('qq-file-id', 'file');
+    const refreshed = await adapter.refreshAttachment(attachment);
 
-    expect(client.getFileCalls).toEqual(['qq-file-id']);
-    expect(refreshed.url).toBe('https://example.com/file/new');
+    expect(client.getImageCalls).toEqual([]);
+    expect(refreshed).toBe(attachment);
+  });
+
+  it('passes through attachments without embedded qq metadata', async () => {
+    const { adapter, client } = createAdapter();
+    const attachment = {
+      type: 'image' as const,
+      name: 'plain.png',
+      url: 'https://example.com/plain.png'
+    };
+
+    const refreshed = await adapter.refreshAttachment(attachment);
+
+    expect(client.getImageCalls).toEqual([]);
+    expect(client.getFileCalls).toEqual([]);
+    expect(client.getRecordCalls).toEqual([]);
+    expect(refreshed).toBe(attachment);
   });
 });

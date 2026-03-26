@@ -87,6 +87,20 @@ function escapeMarkdownLabel(value: string): string {
   return value.replace(/[[\]\\]/g, '\\$&');
 }
 
+function normalizeImageSummary(summary: string | undefined, fallback: string): string {
+  if (!summary) {
+    return fallback;
+  }
+
+  const trimmed = summary.trim();
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    const unwrapped = trimmed.slice(1, -1).trim();
+    return unwrapped || fallback;
+  }
+
+  return trimmed || fallback;
+}
+
 function toMarkdownLink(label: string, url: string): string {
   return `[${escapeMarkdownLabel(label)}](${url})`;
 }
@@ -149,6 +163,11 @@ function attachmentFromSegment(segment: QQMessageSegment): Attachment | null {
     const fileName = basename(segment.data.file, 'image');
     const size = 'file_size' in segment.data ? parseSize(segment.data.file_size) : undefined;
 
+    const emoji =
+      'emoji_id' in segment.data
+        ? { id: segment.data.emoji_id, packageId: segment.data.emoji_package_id }
+        : undefined;
+
     return {
       type: 'image',
       name: fileName,
@@ -156,7 +175,8 @@ function attachmentFromSegment(segment: QQMessageSegment): Attachment | null {
       size,
       qq: {
         kind: 'image',
-        file: segment.data.file
+        file: segment.data.file,
+        ...(emoji ? { emoji } : {})
       }
     };
   }
@@ -516,13 +536,15 @@ export class QQIncomingMessageParser {
     }
 
     if (segment.type === 'image') {
-      const alt = basename(segment.data.file, 'image');
+      const alt = normalizeImageSummary(segment.data.summary, basename(segment.data.file, 'image'));
+
       if (isHttpUrl(segment.data.url)) {
         return {
           markdown: asOwnLine(`![${escapeMarkdownLabel(alt)}](${segment.data.url})`),
           attachments: attachment ? [attachment] : []
         };
       }
+
       return {
         markdown: asOwnLine(`图片:${alt}`),
         attachments: attachment ? [attachment] : []

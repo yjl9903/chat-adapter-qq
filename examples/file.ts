@@ -42,7 +42,7 @@ bot.onNewMention(async (thread, message) => {
 bot.onSubscribedMessage(async (thread, message) => {
   console.log('Receive message attachments', message.attachments);
   for (const attachment of message.attachments) {
-    const resp = await bot.getAdapter('qq').refreshAttachment(attachment);
+    const resp = await adapter.refreshAttachment(attachment);
     console.log('Refresh attachment', resp);
   }
 

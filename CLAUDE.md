@@ -25,16 +25,16 @@ This is a pnpm monorepo with two packages under `packages/`:
 
 ### chat-adapter-qq internals
 
-| File | Role |
-|------|------|
-| `src/adapter.ts` | `QQAdapter` — main adapter class, message routing, thread management |
-| `src/factory.ts` | `createQQAdapter()` — validated factory entry point |
-| `src/types.ts` | `QQThreadId`, `QQRawMessage`, `QQAdapterConfig`, etc. |
-| `src/converter/index.ts` | `QQFormatConverter` — NapCat message segments → Markdown/AST |
-| `src/heartbeat.ts` | `QQNapcatConnectionHeartbeat` — periodic health check, auto-reconnect |
-| `src/napcat/cached-client.ts` | `CachedNCWebsocket` — LRU-cached wrapper around the NapCat WS client |
-| `src/emoji.ts` | QQ emoji ID → Chat SDK emoji normalization |
-| `src/utils.ts` | Thread ID encode/decode, author mapping, message classification |
+| File                          | Role                                                                  |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `src/adapter.ts`              | `QQAdapter` — main adapter class, message routing, thread management  |
+| `src/factory.ts`              | `createQQAdapter()` — validated factory entry point                   |
+| `src/types.ts`                | `QQThreadId`, `QQRawMessage`, `QQAdapterConfig`, etc.                 |
+| `src/converter/index.ts`      | `QQFormatConverter` — NapCat message segments → Markdown/AST          |
+| `src/heartbeat.ts`            | `QQNapcatConnectionHeartbeat` — periodic health check, auto-reconnect |
+| `src/napcat/cached-client.ts` | `CachedNCWebsocket` — LRU-cached wrapper around the NapCat WS client  |
+| `src/emoji.ts`                | QQ emoji ID → Chat SDK emoji normalization                            |
+| `src/utils.ts`                | Thread ID encode/decode, author mapping, message classification       |
 
 Tests live in `packages/chat-adapter-qq/test/`. `napcat-mock.ts` and `test-context.ts` are shared test utilities; all protocol-facing behavior should be covered through these mocks.
 

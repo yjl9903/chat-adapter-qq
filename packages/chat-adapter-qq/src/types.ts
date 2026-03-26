@@ -195,6 +195,13 @@ export interface QQAttachmentHandle {
 
   /** 某些文件消息额外提供的稳定 file_id。 */
   fileId?: string;
+
+  /** 是否为表情包图片 */
+  emoji?: {
+    id?: string;
+
+    packageId?: number;
+  };
 }
 
 // 扩展 chat 原有的消息类型

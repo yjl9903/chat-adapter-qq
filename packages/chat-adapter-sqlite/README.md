@@ -48,14 +48,14 @@ const state = createSqliteState({ client });
 
 ## Configuration
 
-| Option | Required | Description |
-|--------|----------|-------------|
-| `path` | No* | SQLite database path |
-| `client` | No | Existing `better-sqlite3` database instance |
-| `keyPrefix` | No | Prefix for all state rows (default: `"chat-sdk"`) |
-| `logger` | No | Logger instance (defaults to `ConsoleLogger("info").child("sqlite")`) |
+| Option      | Required | Description                                                           |
+| ----------- | -------- | --------------------------------------------------------------------- |
+| `path`      | No\*     | SQLite database path                                                  |
+| `client`    | No       | Existing `better-sqlite3` database instance                           |
+| `keyPrefix` | No       | Prefix for all state rows (default: `"chat-sdk"`)                     |
+| `logger`    | No       | Logger instance (defaults to `ConsoleLogger("info").child("sqlite")`) |
 
-*Either `path`, `SQLITE_PATH`, or `client` is required.
+\*Either `path`, `SQLITE_PATH`, or `client` is required.
 
 ## Environment variables
 
@@ -78,16 +78,16 @@ All rows are namespaced by `key_prefix`.
 
 ## Features
 
-| Feature | Supported |
-|---------|-----------|
-| Persistence | Yes |
-| Single-host multi-process | Yes |
-| Subscriptions | Yes |
-| Locking | Yes |
-| Key-value caching | Yes (with TTL) |
-| List caching | Yes (with TTL and max length) |
-| Automatic table creation | Yes |
-| Key prefix namespacing | Yes |
+| Feature                   | Supported                     |
+| ------------------------- | ----------------------------- |
+| Persistence               | Yes                           |
+| Single-host multi-process | Yes                           |
+| Subscriptions             | Yes                           |
+| Locking                   | Yes                           |
+| Key-value caching         | Yes (with TTL)                |
+| List caching              | Yes (with TTL and max length) |
+| Automatic table creation  | Yes                           |
+| Key prefix namespacing    | Yes                           |
 
 ## Locking considerations
 

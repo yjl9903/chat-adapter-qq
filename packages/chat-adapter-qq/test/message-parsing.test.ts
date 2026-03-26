@@ -54,10 +54,10 @@ describe('QQAdapter parseMessage', () => {
           },
         ],
         "markdown": "hello @10001
-      ![img.png](https://example.com/img.png)
+      ![img](https://example.com/img.png)
       ",
         "text": "hello @10001
-      img.png",
+      img",
         "threadId": "qq:group:30003",
       }
     `);
@@ -153,12 +153,108 @@ describe('QQAdapter parseMessage', () => {
           "image",
           "file",
         ],
-        "markdown": "图片:photo.jpg
+        "markdown": "图片:img
 
       附件:archive.zip
       ",
-        "text": "图片:photo.jpg
+        "text": "图片:img
       附件:archive.zip",
+      }
+    `);
+  });
+
+  it('unwraps bracketed image summary before rendering', () => {
+    const adapter = createQQAdapter({
+      napcat: { baseUrl: 'ws://localhost:3001' }
+    });
+
+    const raw = createGroupMessage([
+      {
+        type: 'image',
+        data: {
+          summary: '[img]',
+          file: 'folder/photo.jpg',
+          sub_type: 0,
+          url: 'https://example.com/photo.jpg',
+          file_size: '3'
+        }
+      },
+      {
+        type: 'image',
+        data: {
+          summary: '[fallback]',
+          file: 'folder/local.png',
+          sub_type: 0,
+          url: '',
+          file_size: '4'
+        }
+      }
+    ]);
+
+    const message = adapter.parseMessage(raw);
+
+    expect({
+      text: message.text,
+      markdown: stringifyMarkdown(message.formatted)
+    }).toMatchInlineSnapshot(`
+      {
+        "markdown": "![img](https://example.com/photo.jpg)
+
+      图片:fallback
+      ",
+        "text": "img
+      图片:fallback",
+      }
+    `);
+  });
+
+  it('records emoji metadata for incoming image attachments', () => {
+    const adapter = createQQAdapter({
+      napcat: { baseUrl: 'ws://localhost:3001' }
+    });
+
+    const raw = createGroupMessage([
+      {
+        type: 'image',
+        data: {
+          summary: '[动画表情]',
+          file: 'cache/emoji-key',
+          sub_type: 0,
+          url: 'https://example.com/emoji.png',
+          file_size: '12',
+          emoji_id: '987654',
+          emoji_package_id: 123456
+        }
+      }
+    ]);
+
+    const message = adapter.parseMessage(raw);
+
+    expect({
+      text: message.text,
+      markdown: stringifyMarkdown(message.formatted),
+      attachments: message.attachments
+    }).toMatchInlineSnapshot(`
+      {
+        "attachments": [
+          {
+            "name": "emoji-key",
+            "qq": {
+              "emoji": {
+                "id": "987654",
+                "packageId": 123456,
+              },
+              "file": "cache/emoji-key",
+              "kind": "image",
+            },
+            "size": 12,
+            "type": "image",
+            "url": "https://example.com/emoji.png",
+          },
+        ],
+        "markdown": "![动画表情](https://example.com/emoji.png)
+      ",
+        "text": "动画表情",
       }
     `);
   });
@@ -416,14 +512,14 @@ describe('QQAdapter parseMessage', () => {
       > quoted line 1
       >
       > quoted line 2
-      > ![reply.png](https://example.com/reply.png)
+      > ![img](https://example.com/reply.png)
 
       tail
       ",
         "text": "@alice{qq:20002}:
       quoted line 1
       quoted line 2
-      reply.png
+      img
       tail",
       }
     `);
@@ -548,13 +644,13 @@ describe('QQAdapter parseMessage', () => {
       > fwd line 2
 
       > @bob-card{qq:20004}:
-      > ![fwd.png](https://example.com/fwd.png)
+      > ![img](https://example.com/fwd.png)
       ",
         "text": "@alice{qq:20002}:
       fwd line 1
       fwd line 2
       @bob-card{qq:20004}:
-      fwd.png",
+      img",
       }
     `);
   });

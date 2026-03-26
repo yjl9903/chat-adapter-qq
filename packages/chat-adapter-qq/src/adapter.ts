@@ -33,8 +33,7 @@ import type {
   QQNapcatClient,
   QQPrivateMessage,
   QQRawMessage,
-  QQThreadId,
-  QQAttachmentHandle
+  QQThreadId
 } from './types.js';
 
 import { LinkedQueue } from './linked-queue.js';
@@ -595,14 +594,10 @@ export class QQAdapter implements Adapter<QQThreadId, QQRawMessage> {
 
   /**
    * 刷新 QQ 附件的临时下载地址。
-   * - 传入 Attachment 时优先读取 `attachment.qq`
-   * - 传入字符串时必须显式提供 `kind`
+   * 仅支持传入包含 `attachment.qq` 的 Attachment。
    */
-  public async refreshAttachment(
-    source: Attachment | QQAttachmentHandle | string,
-    kind?: QQAttachmentHandle['kind']
-  ) {
-    return refreshQQAttachment(this.requireClient(), source, kind);
+  public async refreshAttachment(attachment: Attachment) {
+    return refreshQQAttachment(this.requireClient(), attachment);
   }
 
   /** 渲染格式化内容到 QQ 文本。 */

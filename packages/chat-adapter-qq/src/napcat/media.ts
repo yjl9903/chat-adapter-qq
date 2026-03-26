@@ -2,8 +2,6 @@ import type { Attachment } from 'chat';
 
 import type { QQNapcatClient, QQAttachmentHandle } from '../types.js';
 
-type QQAttachmentRefreshSource = Attachment | QQAttachmentHandle | string;
-
 function parseFileSize(value: unknown): number | undefined {
   if (typeof value !== 'string' && typeof value !== 'number') {
     return undefined;
@@ -38,33 +36,20 @@ function getQQAttachmentHandle(attachment: Attachment): QQAttachmentHandle | nul
   return attachment.qq ?? null;
 }
 
-function normalizeQQAttachmentHandle(
-  source: QQAttachmentRefreshSource,
-  kind?: QQAttachmentHandle['kind']
-): QQAttachmentHandle {
-  if (typeof source === 'string') {
-    if (!kind) {
-      throw new Error('QQ attachment refresh requires kind when source is a string.');
-    }
-    return { kind, file: source };
-  }
-
-  const handle = 'type' in source ? getQQAttachmentHandle(source) : source;
-
-  if (!handle) {
-    throw new Error('Attachment does not contain QQ refresh metadata.');
-  }
-
-  return handle;
-}
-
 export async function refreshQQAttachment(
   client: QQNapcatClient,
-  source: QQAttachmentRefreshSource,
-  kind?: QQAttachmentHandle['kind']
+  attachment: Attachment
 ): Promise<Attachment> {
-  // 统一接受 Attachment、QQ 句柄或裸文件标识，再按 NapCat 媒体类型分派。
-  const handle = normalizeQQAttachmentHandle(source, kind);
+  const handle = getQQAttachmentHandle(attachment);
+
+  if (!handle) {
+    return attachment;
+  }
+
+  if (handle.kind === 'image' && handle.emoji) {
+    // 表情包图片没有续期需求，直接保留原始附件，避免丢失现有 url/name 等字段。
+    return attachment;
+  }
 
   if (handle.kind === 'image') {
     if (!handle.file) {

@@ -49,6 +49,7 @@ It should be updated when runtime behavior, adapter APIs, or test coverage chang
 - `fetchThread`: supported with API-backed metadata for group/private.
 - `fetchChannelInfo` / `fetchChannelMessages`: supported (delegates to thread methods).
 - `openDM`: supported (returns encoded `qq:private:{userId}`).
+- `refreshAttachment`: supported for QQ attachments carrying `attachment.qq` refresh metadata.
 
 ### QQ-specific member APIs
 
