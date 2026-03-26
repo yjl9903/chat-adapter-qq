@@ -43,11 +43,11 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "better-sqlite3": "^12.8.0",
-    "chat": "^4.21.0"
+    "chat": "^4.23.0"
   },
   "peerDependencies": {
     "better-sqlite3": "^12.6.2",
-    "chat": "^4.0.0"
+    "chat": "^4.23.0"
   },
   "engines": {
     "node": ">=v20.10.0"

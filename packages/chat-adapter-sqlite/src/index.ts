@@ -42,6 +42,11 @@ interface ListRow {
   value: string | null;
 }
 
+interface QueueRow {
+  seq: number;
+  value: string;
+}
+
 export class SqliteStateAdapter implements StateAdapter {
   private db?: SqliteDatabaseClient;
 
@@ -393,16 +398,79 @@ export class SqliteStateAdapter implements StateAdapter {
     return rows.map((row) => deserializeValue<T>(row.value));
   }
 
-  dequeue(threadId: string): Promise<QueueEntry | null> {
-    throw new Error('Method not implemented.');
+  async dequeue(threadId: string): Promise<QueueEntry | null> {
+    this.ensureConnected();
+
+    return this.withImmediateTransaction(() => {
+      const db = this.getDb();
+      const row = db
+        .prepare<[string, string], QueueRow>(
+          `SELECT seq, value FROM chat_state_queue
+           WHERE key_prefix = ? AND thread_id = ?
+           ORDER BY seq ASC
+           LIMIT 1`
+        )
+        .get(this.keyPrefix, threadId);
+
+      if (!row) {
+        return null;
+      }
+
+      db.prepare(
+        `DELETE FROM chat_state_queue
+         WHERE key_prefix = ? AND thread_id = ? AND seq = ?`
+      ).run(this.keyPrefix, threadId, row.seq);
+
+      return deserializeValue<QueueEntry>(row.value);
+    });
   }
 
-  enqueue(threadId: string, entry: QueueEntry, maxSize: number): Promise<number> {
-    throw new Error('Method not implemented.');
+  async enqueue(threadId: string, entry: QueueEntry, maxSize: number): Promise<number> {
+    this.ensureConnected();
+
+    return this.withImmediateTransaction(() => {
+      const db = this.getDb();
+      db.prepare(
+        `INSERT INTO chat_state_queue (key_prefix, thread_id, value, enqueued_at, expires_at)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(this.keyPrefix, threadId, serializeValue(entry), entry.enqueuedAt, entry.expiresAt);
+
+      const count =
+        db
+          .prepare<[string, string], CountRow>(
+            `SELECT COUNT(*) AS count FROM chat_state_queue
+             WHERE key_prefix = ? AND thread_id = ?`
+          )
+          .get(this.keyPrefix, threadId)?.count ?? 0;
+
+      const overflow = count - maxSize;
+      if (overflow > 0) {
+        db.prepare(
+          `DELETE FROM chat_state_queue
+           WHERE seq IN (
+             SELECT seq FROM chat_state_queue
+             WHERE key_prefix = ? AND thread_id = ?
+             ORDER BY seq ASC
+             LIMIT ?
+           )`
+        ).run(this.keyPrefix, threadId, overflow);
+      }
+
+      return Math.min(count, maxSize);
+    });
   }
 
-  queueDepth(threadId: string): Promise<number> {
-    throw new Error('Method not implemented.');
+  async queueDepth(threadId: string): Promise<number> {
+    this.ensureConnected();
+
+    return (
+      this.getDb()
+        .prepare<[string, string], CountRow>(
+          `SELECT COUNT(*) AS count FROM chat_state_queue
+           WHERE key_prefix = ? AND thread_id = ?`
+        )
+        .get(this.keyPrefix, threadId)?.count ?? 0
+    );
   }
 
   getClient(): SqliteDatabaseClient {
@@ -456,6 +524,18 @@ export class SqliteStateAdapter implements StateAdapter {
 
       CREATE INDEX IF NOT EXISTS chat_state_lists_expires_idx
       ON chat_state_lists (expires_at);
+
+      CREATE TABLE IF NOT EXISTS chat_state_queue (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_prefix TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        value TEXT NOT NULL,
+        enqueued_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS chat_state_queue_lookup_idx
+      ON chat_state_queue (key_prefix, thread_id, seq);
     `);
   }
 

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { QueueEntry } from 'chat';
 import {
   createSqliteState,
   type SqliteDatabaseClient,
@@ -42,6 +43,17 @@ function trackClient(client: SqliteDatabaseClient): SqliteDatabaseClient {
     }
   });
   return client;
+}
+
+function createQueueEntry(id: string, enqueuedAt = Date.now()): QueueEntry {
+  return {
+    enqueuedAt,
+    expiresAt: enqueuedAt + 60_000,
+    message: {
+      id,
+      text: `message:${id}`
+    } as QueueEntry['message']
+  };
 }
 
 describe('createSqliteState', () => {
@@ -216,8 +228,41 @@ describe('lists', () => {
   });
 });
 
+describe('queue', () => {
+  it('enqueues and dequeues entries in FIFO order', async () => {
+    const adapter = trackAdapter(createSqliteState({ client: trackClient(createClient()) }));
+    await adapter.connect();
+
+    const first = createQueueEntry('a', 1_000);
+    const second = createQueueEntry('b', 2_000);
+
+    expect(await adapter.enqueue('thread-1', first, 10)).toBe(1);
+    expect(await adapter.enqueue('thread-1', second, 10)).toBe(2);
+    expect(await adapter.queueDepth('thread-1')).toBe(2);
+
+    expect(await adapter.dequeue('thread-1')).toEqual(first);
+    expect(await adapter.dequeue('thread-1')).toEqual(second);
+    expect(await adapter.dequeue('thread-1')).toBeNull();
+    expect(await adapter.queueDepth('thread-1')).toBe(0);
+  });
+
+  it('trims the oldest entries when maxSize is exceeded', async () => {
+    const adapter = trackAdapter(createSqliteState({ client: trackClient(createClient()) }));
+    await adapter.connect();
+
+    await adapter.enqueue('thread-1', createQueueEntry('a', 1_000), 2);
+    await adapter.enqueue('thread-1', createQueueEntry('b', 2_000), 2);
+
+    expect(await adapter.enqueue('thread-1', createQueueEntry('c', 3_000), 2)).toBe(2);
+    expect(await adapter.queueDepth('thread-1')).toBe(2);
+
+    expect((await adapter.dequeue('thread-1'))?.message.id).toBe('b');
+    expect((await adapter.dequeue('thread-1'))?.message.id).toBe('c');
+  });
+});
+
 describe('keyPrefix isolation', () => {
-  it('isolates cache and subscriptions for shared clients', async () => {
+  it('isolates cache, subscriptions, and queues for shared clients', async () => {
     const client = trackClient(createClient());
     const first = trackAdapter(createSqliteState({ client, keyPrefix: 'first' }));
     const second = trackAdapter(createSqliteState({ client, keyPrefix: 'second' }));
@@ -228,9 +273,13 @@ describe('keyPrefix isolation', () => {
     await first.set('shared-key', 'first-value');
     await second.set('shared-key', 'second-value');
     await first.subscribe('thread-1');
+    await first.enqueue('thread-1', createQueueEntry('first'), 10);
+    await second.enqueue('thread-1', createQueueEntry('second'), 10);
 
     expect(await first.get('shared-key')).toEqual('first-value');
     expect(await second.get('shared-key')).toEqual('second-value');
     expect(await second.isSubscribed('thread-1')).toBe(false);
+    expect((await first.dequeue('thread-1'))?.message.id).toBe('first');
+    expect((await second.dequeue('thread-1'))?.message.id).toBe('second');
   });
 });

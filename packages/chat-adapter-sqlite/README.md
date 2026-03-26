@@ -72,6 +72,7 @@ chat_state_subscriptions
 chat_state_locks
 chat_state_cache
 chat_state_lists
+chat_state_queue
 ```
 
 All rows are namespaced by `key_prefix`.
@@ -86,6 +87,7 @@ All rows are namespaced by `key_prefix`.
 | Locking                   | Yes                           |
 | Key-value caching         | Yes (with TTL)                |
 | List caching              | Yes (with TTL and max length) |
+| Message queueing          | Yes (`queue` / `debounce`)    |
 | Automatic table creation  | Yes                           |
 | Key prefix namespacing    | Yes                           |
 
@@ -100,6 +102,7 @@ SQLite does not automatically delete expired rows. The adapter performs opportun
 - expired locks are replaced during `acquireLock()`
 - expired cache entries are removed during `get()` and `setIfNotExists()`
 - expired list items are removed during `appendToList()` and `getList()`
+- queued entries are removed when dequeued; Chat SDK drops stale queued entries based on `expiresAt`
 
 ## License
 
