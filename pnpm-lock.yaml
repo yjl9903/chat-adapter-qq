@@ -48,7 +48,7 @@ importers:
   packages/chat-adapter-qq:
     dependencies:
       '@chat-adapter/shared':
-        specifier: ^4.22.0
+        specifier: ^4.23.0
         version: 4.23.0
       isomorphic-ws:
         specifier: ^5.0.0
