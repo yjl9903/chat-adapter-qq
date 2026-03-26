@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { type Lock, type Logger, type StateAdapter, ConsoleLogger } from 'chat';
+import { type Lock, type Logger, type StateAdapter, ConsoleLogger, QueueEntry } from 'chat';
 
 export type SqliteDatabaseClient = Database.Database;
 
@@ -391,6 +391,18 @@ export class SqliteStateAdapter implements StateAdapter {
       .all(this.keyPrefix, key);
 
     return rows.map((row) => deserializeValue<T>(row.value));
+  }
+
+  dequeue(threadId: string): Promise<QueueEntry | null> {
+    throw new Error('Method not implemented.');
+  }
+
+  enqueue(threadId: string, entry: QueueEntry, maxSize: number): Promise<number> {
+    throw new Error('Method not implemented.');
+  }
+
+  queueDepth(threadId: string): Promise<number> {
+    throw new Error('Method not implemented.');
   }
 
   getClient(): SqliteDatabaseClient {

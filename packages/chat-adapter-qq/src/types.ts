@@ -9,7 +9,7 @@ import type {
   WSSendReturn
 } from 'node-napcat-ts';
 
-import type { CachedNCWebsocketOptions } from './napcat/cached-client';
+import type { CachedNCWebsocketOptions } from './napcat/cached-client.js';
 
 /**
  * QQ 会话类型。
