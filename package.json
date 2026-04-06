@@ -17,7 +17,7 @@
     "@types/mdast": "^4.0.4",
     "@types/node": "^24.12.2",
     "bumpp": "latest",
-    "dotenv": "^17.4.0",
+    "dotenv": "^17.4.1",
     "prettier": "^3.8.1",
     "tsdown": "^0.21.7",
     "tsx": "^4.21.0",
