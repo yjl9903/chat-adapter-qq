@@ -73,8 +73,8 @@ importers:
         specifier: ^4.23.0
         version: 4.23.0
       node-napcat-ts:
-        specifier: 0.4.24
-        version: 0.4.24
+        specifier: 0.4.25
+        version: 0.4.25
 
   packages/chat-adapter-sqlite:
     devDependencies:
@@ -948,8 +948,8 @@ packages:
     resolution: {integrity: sha512-6u9UwL0HlAl21+agMN3YAMXcKByMqwGx+pq+P76vii5f7hTPtKDp08/H9py6DY+cfDw7kQNTGEj/rly3IgbNQA==}
     engines: {node: '>=10'}
 
-  node-napcat-ts@0.4.24:
-    resolution: {integrity: sha512-282pVks58uvbnog5Y6TeYD4fJP5+Z96T9nFhNwVOrsoTdJVRddNmgvqGiOPVEywaW8bOsnT6MGR0Ue0DpLO60A==}
+  node-napcat-ts@0.4.25:
+    resolution: {integrity: sha512-Yp/+JNJ65DnCnNJzxVP/kqkRXdDHM4hVM3MLuYvoGFaT3gCclSyuEiZ5tL5ADVrWxWHMtJJaV5yJVSrBsrIR/w==}
 
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
@@ -2170,7 +2170,7 @@ snapshots:
     dependencies:
       semver: 7.7.4
 
-  node-napcat-ts@0.4.24:
+  node-napcat-ts@0.4.25:
     dependencies:
       isomorphic-ws: 5.0.0(ws@8.20.0)
       nanoid: 5.1.7
