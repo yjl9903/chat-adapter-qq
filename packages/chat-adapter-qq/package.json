@@ -50,7 +50,7 @@
     "ws": "^8.20.0"
   },
   "devDependencies": {
-    "@chat-adapter/state-memory": "^4.23.0",
+    "@chat-adapter/state-memory": "^4.24.0",
     "@types/mdast": "^4.0.4",
     "chat": "^4.23.0",
     "node-napcat-ts": "0.4.25"
