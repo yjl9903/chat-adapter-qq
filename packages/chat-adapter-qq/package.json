@@ -46,7 +46,7 @@
     "@chat-adapter/shared": "^4.23.0",
     "isomorphic-ws": "^5.0.0",
     "lru-cache": "^11.2.7",
-    "nanoid": "^5.1.7",
+    "nanoid": "^5.1.16",
     "ws": "^8.20.0"
   },
   "devDependencies": {
